@@ -91,7 +91,7 @@ echo -e "%NProcShared=$n_proc
 %Chk=w0$w_.chk
 #P $func_basis opt freq IOp(3/107=0${w_}00${w_}0, 3/108=0${w_}00${w_}0)\n
 Geometry optimization with w=$i \n
-0 1" >> w0$w_.com
+0 1" > w0$w_.com
 
 cat ../geom_initial.xyz | awk 'NR>=3' >> w0$w_.com
 echo "" >> w0$w_.com
@@ -104,7 +104,7 @@ echo -e "%NProcShared=$n_proc
 %Chk=a_w0$w_.chk
 #P $func_basis Guess=Read Geom=Check IOp(3/107=0${w_}00${w_}0, 3/108=0${w_}00${w_}0)\n
 Anion single-point at the neutral optimized geometry with w=$i \n
--1 2 \n" >> a_w0$w_.com
+-1 2 \n" > a_w0$w_.com
 
 # Write the input for cation sp calculation at the optimized geometry
 
@@ -114,7 +114,7 @@ echo -e "%NProcShared=$n_proc
 %Chk=c_w0$w_.chk
 #P $func_basis Guess=Read Geom=Check IOp(3/107=0${w_}00${w_}0, 3/108=0${w_}00${w_}0)\n
 Cation single-point at the neutral optimized geometry with w=$i \n
-1 2 \n" >> c_w0$w_.com
+1 2 \n" > c_w0$w_.com
 
 cd ../
 
