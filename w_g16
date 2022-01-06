@@ -1,0 +1,149 @@
+#!/bin/bash
+
+# Script que cria os diretórios e inputs para a otimização do parâmetro de longo alcance (w) utilizando o software Gaussian16.
+# Sumário
+
+# 1) Recebe o intervalo de valores de w e o delta_w entre cada um 
+# (EX: 0.1 até 0.5 ao passo de 0.1 -> 0.1, 0.2, 0.3, 0.4 e 0.5).
+
+# 2) Cria os diretórios para cada valor de w (EX: w010, w020, w030, w040 e w050 no caso acima).
+
+# 3) Recebe a geometria inicial no formato "geom_initial.xyz" e monta 3 inputs dentro de cada diretório, 
+# um de otimizacao, um single-point do ânion e outro do cátion (EX: w010.com, a_w010.com e c_w010.com).
+
+# 4) Submete os jobs de otimização para a fila se for de interesse.
+
+# ============================================================================================================================
+
+# echo "What is the lowest value of w?"
+# read w_min
+
+# echo "What is the highest value of w? (w_max < 1)"
+# read w_max
+
+# echo "What is the variation step in w?"
+# read delta_w
+
+# echo "INTERVAL: w in [$w_min], $w_max] with a $delta_w delta."
+
+# echo "What is the number of processors shared?"
+# read n_proc
+
+# echo "How much memory is allocated?"
+# read mem
+
+# echo "The default functional and basis are wB97XD/6-31G(d,p), 
+# do you want to change it? (y/n)"
+# read func_basis
+
+# if [ $func_basis == "n" ]
+# then
+# 	func_basis="wB97XD/6-31G(d,p)"
+# else
+# 	echo "What are the new functional and atomic basis set? [FORMAT: functional/basis]"
+# 	read func_basis
+# fi
+
+w_min="0.1"
+delta_w="0.1"
+w_max="0.5"
+n_proc="12"
+mem="12"
+func_basis="wB97XD/6-31G(d,p)"
+
+# Create the submission files
+
+touch opt_g16.job	# Create the submission file
+touch ions_g16.job	# Create the submission file 
+
+# Write the header at both submission files
+
+echo -e "#!/bin/bash
+#PBS -l nodes=1:ppn=$n_proc
+#PBS -l vmem=${mem}G
+#PBS -m ae
+#PBS -N opt_g16
+#PBS -q schwinger\n" >> opt_g16.job
+
+echo -e "#!/bin/bash
+#PBS -l nodes=1:ppn=$n_proc
+#PBS -l vmem=${mem}G
+#PBS -m ae
+#PBS -N ions_g16
+#PBS -q schwinger\n" >> ions_g16.job
+
+# Start the loop for w
+
+for i in $(LANG=en_US seq $w_min $delta_w $w_max); do
+
+w_=$(echo "scale=0; $i * 1000 / 1" | bc)
+
+mkdir w0$w_			# Create the directory
+cd w0$w_			# Go to it 
+touch w0$w_.com		# Create the input file for geometry optimization
+touch a_w0$w_.com	# Create the input file for anion sp calculation
+touch c_w0$w_.com	# Create the input file for cation sp calculation
+	
+# Write the input for geometry optimization
+
+echo -e "%NProcShared=$n_proc
+%Mem=${mem}gb
+%Chk=w0$w_.chk
+#P $func_basis opt freq IOp(3/107=0${w_}00${w_}0, 3/108=0${w_}00${w_}0)\n
+Geometry optimization with w=$i \n
+0 1" >> w0$w_.com
+
+cat ../geom_initial.xyz | awk 'NR>=3' >> w0$w_.com
+echo "" >> w0$w_.com
+
+# Write the input for anion sp calculation at the optimized geometry
+
+echo -e "%NProcShared=$n_proc
+%Mem=${mem}gb
+%OldChk=w0$w_.chk
+%Chk=a_w0$w_.chk
+#P $func_basis Guess=Read Geom=Check IOp(3/107=0${w_}00${w_}0, 3/108=0${w_}00${w_}0)\n
+Anion single-point at the neutral optimized geometry with w=$i \n
+-1 2 \n" >> a_w0$w_.com
+
+# Write the input for cation sp calculation at the optimized geometry
+
+echo -e "%NProcShared=$n_proc
+%Mem=${mem}gb
+%OldChk=w0$w_.chk
+%Chk=c_w0$w_.chk
+#P $func_basis Guess=Read Geom=Check IOp(3/107=0${w_}00${w_}0, 3/108=0${w_}00${w_}0)\n
+Cation single-point at the neutral optimized geometry with w=$i \n
+1 2 \n" >> c_w0$w_.com
+
+cd ../
+
+# Append the currently directory files to the submission file
+
+echo -e "cd $(pwd)/w0${w_}\n
+module load softwares/gaussian/g16
+EXE=g16\n
+\$EXE < w0${w_}.com > w0${w_}.out\n
+cd ../" >> opt_g16.job
+
+echo -e "cd $(pwd)/w0${w_}\n
+module load softwares/gaussian/g16
+EXE=g16\n
+\$EXE < a_w0${w_}.com > a_w0${w_}.out
+\$EXE < c_w0${w_}.com > c_w0${w_}.out\n
+cd ../" >> ions_g16.job
+
+done
+
+# Submit the job to the schwinger queue in the Gauss cluster
+
+echo "Submit the optimization jobs now? (y/n)"
+read subm
+
+if [ $subm == "y" ]
+then
+	qsub opt_g16.job
+fi
+
+
+

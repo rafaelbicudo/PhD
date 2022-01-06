@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# Script para juntar os resultados dos cálculos do script w_g16 e gerar um arquivo .csv
+
+# cat w0100.out | grep 'E(' | awk '{{ print $5 }}' | tail -1
+
+# echo "What is the lowest value of w?"
+# read w_min
+
+# echo "What is the highest value of w? (w_max < 1)"
+# read w_max
+
+# echo "What is the variation step in w?"
+# read delta_w
+
+w_min="0.1"
+delta_w="0.1"
+w_max="0.5"
+
+touch aux	# Create the csv file
+
+echo "w
+E_{N-1} (Hartree) [c]
+E_N
+E_{N+1} [a]
+E_{HOMO}
+E_{LUMO}" > aux		# Write the header
+
+# Start the loop to extract useful data
+
+for i in $(LANG=en_US seq $w_min $delta_w $w_max); do
+
+w_=$(echo "scale=0; $i * 1000 / 1" | bc)
+
+echo w0.${w_} >> aux
+cat w0${w_}/c_w0${w_}.out | grep 'E(' | awk '{ print $5 }' >> aux
+cat w0${w_}/w0${w_}.out | grep 'E(' | awk '{ print $5 }' | tail -1 >> aux
+cat w0${w_}/a_w0${w_}.out | grep 'E(' | awk '{ print $5 }' >> aux
+cat w0${w_}/w0${w_}.out | grep 'occ.' | tail -1 | awk '{ print $5 }' >> aux
+cat w0${w_}/w0${w_}.out | grep -A1 'occ.' | tail -1 | awk '{ print $5 }' >> aux
+
+done
+
+cat aux | paste -d "," - - - - - - > data_w.csv
+rm aux
