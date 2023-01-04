@@ -3,13 +3,11 @@
 """
 Script do the following:
 
-[X] 1) Extract QM energy from torsional scan via Gaussian09/16 and write a "qm_scan.csv" file 
-	-> 2 columns with angles and energies.
-[X] 2) Determine all dihedral angles that change during the scan and write a "dihedrals.csv" file 
-	-> columns with changing torsionals for each configuration.
-[X] 3) Interpolate the QM data using a cubic polynomial and perform a linear regression to determine the 4 coefficients in 
-the Fourier version of Ryckaert-Bellemans torsional potentials (F_1, F_2, F_3 and F_4). -> Actually using the 6 coefficients
+1) Extract QM energy from torsional scan via Gaussian09/16 and write a "qm_scan.csv" file 
+2) Determine all dihedral angles that change during the scan and write a "dihedrals.csv" file 
+3) Interpolate the QM data using a cubic polynomial and perform a linear regression to determine the 6 coefficients
 that yielded better results.
+4) Write the 6 coefficients in the topology "LR_*.itp" file.
 
 Author: Rafael Bicudo Ribeiro (@rafaelbicudo) and Thiago Duarte (@thiagodsd)
 DATE: DEZ/2022
@@ -34,13 +32,13 @@ def find_bonded_atoms(topfile, a1, a2, a3, a4):
 	
 	PARAMETERS:
 	topfile - topology file
-	a1 - first atom defining the dihedral angle
-	a2 - second atom defining the dihedral angle
-	a3 - third atom defining the dihedral angle
-	a4 - fourth atom defining the dihedral angle
+	a1 [type: int] - first atom defining the dihedral angle
+	a2 [type: int] - second atom defining the dihedral angle
+	a3 [type: int] - third atom defining the dihedral angle
+	a4 [type: int] - fourth atom defining the dihedral angle
 
 	OUTPUT:
-	Angles (list)
+	Angles [type: list]
 	"""
 
 	dih_atoms = [a1, a2, a3, a4]
@@ -72,13 +70,14 @@ def find_dihedrals(topfile, a1, a2, a3, a4):
 
 	PARAMETERS:
 	topfile - topology file
-	a1 - first atom defining the dihedral angle
-	a2 - second atom defining the dihedral angle
-	a3 - third atom defining the dihedral angle
-	a4 - fourth atom defining the dihedral angle
+	a1 [type: int] - first atom defining the dihedral angle
+	a2 [type: int] - second atom defining the dihedral angle
+	a3 [type: int] - third atom defining the dihedral angle
+	a4 [type: int] - fourth atom defining the dihedral angle
 
 	OUTPUT: 
-	Dihedral angles (list of lists with 4 integers each) and labels (list of strings)
+	Dihedral angles [type: list] (list of lists with 4 integers each)
+	Labels [type: list] (list of strings)
 	"""
 
 	candidates = find_bonded_atoms(topfile, a1, a2, a3, a4)
@@ -122,10 +121,10 @@ def write_torsional_changes(xyzrotationsfile, topfile, a1, a2, a3, a4, npoints):
 	PARAMETERS:
 	xyzrotationsfile - configurations file
 	topfile - topology file
-	a1 - first atom defining the dihedral angle
-	a2 - second atom defining the dihedral angle
-	a3 - third atom defining the dihedral angle
-	a4 - fourth atom defining the dihedral angle
+	a1 [type: int] - first atom defining the dihedral angle
+	a2 [type: int] - second atom defining the dihedral angle
+	a3 [type: int] - third atom defining the dihedral angle
+	a4 [type: int] - fourth atom defining the dihedral angle
 
 	OUTPUT:
 	The "dihedrals.csv" file.
@@ -204,7 +203,7 @@ def write_itp_file(topfile, lr_data):
 
 	PARAMETERS:
 	topfile - topology file
-	lr_data - nested dictionary with atoms and coeficients for each torsional angle
+	lr_data [type: dict] - nested dictionary with atoms and coeficients for each torsional angle
 
 	OUTPUT:
 	A "LR_*.itp" file.
