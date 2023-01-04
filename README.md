@@ -1,3 +1,3 @@
-# Doutorado
+# PhD
 
-Repositório com códigos escritos e usados durante o meu Doutorado.
+Repository with scripts using during my PhD.
