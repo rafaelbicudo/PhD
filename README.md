@@ -45,6 +45,6 @@ Performs a linear regression to determine Ryckaert-Bellemans torsional coefficie
 
 1. Gaussian09/16 output file - `gaussianlogfile`
 2. DICEtools xyz rotations file - `xyzrotationsfile`
-3. GROMACS topology file - `topfile`
+3. GROMACS (.itp) topology file - `topfile`
 4. Number of points (configurations) in the rigid scan - `npoints`
 5. Atoms defining the torsional angle - `a1`, `a2`, `a3` and `a4`
