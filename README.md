@@ -41,7 +41,7 @@ Create a .csv file that provides, for each $\omega$ value, the following:
 
 ### linear-regression.py
 
-Performs a linear regression to determine Ryckaert-Bellemans torsional coefficients used in the parameterization of classical dihedral energies. The optimization uses quantum mechanical calculations of a rigid scan performed with Gaussian09/16 code, performs a cubic interpolation in the quantum data and fit the coefficients to reproduce the polynomial. It recieves as input:
+Performs a linear regression to determine Ryckaert-Bellemans torsional coefficients used in the parameterization of classical dihedral energies. The optimization uses quantum mechanical calculations of a rigid scan via Gaussian09/16 code, performs a cubic interpolation in the quantum data and fit the coefficients to reproduce the polynomial. It recieves as input:
 
 1. Gaussian09/16 output file - `gaussianlogfile`
 2. DICEtools xyz rotations file - `xyzrotationsfile`
