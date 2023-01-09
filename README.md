@@ -45,7 +45,7 @@ Performs a linear regression to determine Ryckaert-Bellemans torsional coefficie
 
 1. Gaussian09/16 output file - `gaussianlogfile`
 2. DICEtools xyz rotations file - `xyzrotationsfile`
-3. GROMACS (.itp) topology file - `topfile`
+3. GROMACS topology file (.itp) - `topfile`
 4. Number of points (configurations) in the rigid scan - `npoints`
 5. Atoms defining the torsional angle - `a1`, `a2`, `a3` and `a4`
 
@@ -53,7 +53,7 @@ Performs a linear regression to determine Ryckaert-Bellemans torsional coefficie
 
 Interface with [GROMACS](https://www.gromacs.org/) developed for performing solvent evaporation. By specifying the amount of solvent and the evaporation rate, the script removes solvent molecules and call GROMACS to perform NPT simulations in a loop. It recieves the following as input:
 
-1. GROMACS molecular structure file (`.gro`) - `grofile`
-2. GROMACS topology file (`.top`) - `topfile`
+1. GROMACS molecular structure file (.gro) - `grofile`
+2. GROMACS topology file (.top) - `topfile`
 3. Evaporation rate (in percentage) - `evapRate`
 4. Total amount of solvent to be removed (in percentage) - `evapTotal`
