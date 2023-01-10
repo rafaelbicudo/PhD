@@ -8,6 +8,7 @@ Script to perform evaporation of solvent using GROMACS.
 [X] Run a NPT simulation.
 [X] Make a loop for complete solvent elimination.
 
+OBS: Do not use a residue name with letters and numbers changing, ex: A1E2C5 -> BUG CORRECTED!
 OBS: Do not have a topology file with underscore ("_") in the name.
 OBS: Solute must be at the beginning of topology file.
 OBS: Works only with one type of solvent (resname = 'SOL').
@@ -88,13 +89,13 @@ def read_gro_file(grofile: str) -> dict:
 		line = gro.readline()
 
 		# Parse the atomic data 
-		while len(line.split()) == 6:
+		while len(line.split()) >= 6:
 			words = line.split()
 			gro_data[i] = {}
 			gro_data[i]['molNumber'] = int(line[0:5].strip())
 			gro_data[i]['resName'] = line[5:10].strip()
 			gro_data[i]['atomName'] = line[10:15].strip()
-			gro_data[i]['atomsCoord'] = [float(words[3]), float(words[4]), float(words[5])]
+			gro_data[i]['atomsCoord'] = [float(line[20:28].strip()), float(line[28:36].strip()), float(line[36:44].strip())]
 			i += 1
 			line = gro.readline()
 
@@ -226,35 +227,68 @@ def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evap
 
 def setup_lince2(cycle: int):
 	"""
-	Create directories and files for running GROMACS simulations.
+	Create directories and files for running GROMACS simulations at the HPC - Lince2 cluster.
 
 	PARAMETERS:
-	grofile - the .gro file from GROMACS with atomic positions
-	topfile - the .top file from GROMACS with number of molecules.
 	cycle [type: int] - integer to track the evaporation loop
 
 	OUTPUT:
-	runEvaporation.sh - submission script file for lince2 cluster
+	None
 	"""
 
 	# Create a directory for the current cycle
 	sp.run("mkdir cycle{0}".format(cycle), shell=True)
 
 	# Copy the input files to the current cycle directory
+	# sp.run("cp npt.mdp cycle{0}.gro cycle{0}.top cycle{0}/".format(cycle), shell=True)
 	sp.run("cp npt.mdp cycle{0}/".format(cycle), shell=True)
 	sp.run("mv cycle{0}.gro cycle{0}.top cycle{0}/".format(cycle), shell=True)
 
 	# Go to the current cycle directory
-	sp.run("cd cycle{0}".format(cycle), shell=True)
+	# sp.run("cd cycle{0}".format(cycle), shell=True)
 
 	# Run the preprocessor to generate GROMACS binaries
-	sp.run("gmx grompp -f npt.mdp -c cycle{0}.gro -p cycle{0}.top -o cycle{0}.tpr".format(cycle), shell=True)
+	# sp.run("gmx grompp -f npt.mdp -c cycle{0}.gro -p cycle{0}.top -o cycle{0}.tpr".format(cycle), shell=True)
 
 	# Run the NPT simulation
-	sp.run("gmx mdrun -s cycle{0}.tpr -deffnm CYCLE{0}-NPT -pin on -ntmpi 2 -ntomp 8 -maxh 0.05".format(cycle), shell=True)
+	# sp.run("gmx mdrun -s cycle{0}.tpr -deffnm CYCLE{0}-NPT -pin on -ntmpi 2 -ntomp 8 -maxh 0.05".format(cycle), shell=True)
 
 	# Go back to the script directory
-	sp.run("cd ../", shell=True)
+	# sp.run("cd ../", shell=True)
+
+	# TESTES
+	sp.run("cp cycle{0}/cycle{0}.gro cycle{0}/CYCLE{0}-NPT.gro".format(cycle), shell=True)
+
+def setup_lovelace_1gpu(cycle: int):
+	"""
+	Create directories and files for running GROMACS simulations in 'umagpu' queue at the CENAPAD - Lovelace cluster.
+
+	PARAMETERS:
+	cycle [type: int] - integer to track the evaporation loop
+
+	OUTPUT:
+	None
+	"""
+
+	# Run the preprocessor to generate GROMACS binaries
+	sp.run("$nv_gromacs gmx grompp -f npt.mdp -c cycle{0}.gro -p cycle{0}.top -o cycle{0}.tpr -po mdout{0}.mdp -maxwarn 2".format(cycle), shell=True)
+	
+	# Run the NPT simulation
+	sp.run("OMP_NUM_THREADS=4 $nv_gromacs gmx mdrun -s cycle{0}.tpr -deffnm CYCLE{0}-NPT -c CYCLE{0}-NPT.gro -ntmpi 4 -nb gpu -pin on -v -ntomp 4 -update gpu -notunepme -resethway".format(cycle), shell=True)
+
+	# Create a directory for the current cycle
+	sp.run("mkdir cycle{0}".format(cycle), shell=True)
+
+	# Copy the input files to the current cycle directory
+	sp.run("cp npt.mdp cycle{0}/".format(cycle), shell=True)
+	sp.run("mv mdout{0}.mdp cycle{0}.* CYCLE{0}-NPT* cycle{0}/".format(cycle), shell=True)
+	#sp.run("cp cycle{0}.gro cycle{0}.top cycle{0}/".format(cycle), shell=True)
+
+	# Go to the current cycle directory
+	#sp.run("cd cycle{0}/".format(cycle), shell=True)
+
+	# Go back to the script directory
+	# sp.run("cd ../", shell=True)
 
 def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: float, dynamic: bool):
 	"""
@@ -290,7 +324,8 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 	random_remover(grofile, topfile, evapRate, 1, 0)
 
 	# First NPT simulation
-	setup_lince2(1)
+	# setup_lince2(1)
+	setup_lovelace_1gpu(1)
 
 	if dynamic:
 		#########################################################################
@@ -300,15 +335,6 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 		i = 1
 		while (solvMolecules >= evapTotal*solvMolecules/100) and (solvMolecules > 1):
 			print("Working on cycle %s." % str(i+1))
-			# if i == 1:
-			# 	top_data = read_top_file("cycle{0}_{1}".format(str(i), topfile))
-			# 	gro_data = read_gro_file("cycle{0}_{1}".format(str(i), grofile))
-			# 	totalMolecules, solvMolecules = nMolecules("cycle{0}_{1}".format(str(i), topfile))
-			# 	if (evapRate*totalMolecules/100 >= 1):
-			# 		random_remover("cycle{0}_{1}".format(str(i), grofile), "cycle{0}_{1}".format(str(i), topfile), evapRate, i+1, 0)
-			# 	else:
-			# 		random_remover("cycle{0}_{1}".format(str(i), grofile), "cycle{0}_{1}".format(str(i), topfile), evapRate, i+1, 1)
-			# else:
 			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
 			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
 			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
@@ -316,7 +342,8 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 				random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 0)
 			else:
 				random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 1)
-			setup_lince2(i+1)
+			# setup_lince2(i+1)
+			setup_lovelace_1gpu(i+1)
 			i += 1
 	else:
 		#########################################################################
@@ -330,7 +357,8 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
 			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
 			random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, evapInit)
-			setup_lince2(i+1)
+			# setup_lince2(i+1)
+			setup_lovelace_1gpu(i+1)
 			i += 1
 
 		# Remove the remaining solvent molecules
@@ -339,7 +367,8 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 		gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
 		totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
 		random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, solvMolecules)
-		setup_lince2(i+1)
+		# setup_lince2(i+1)
+		setup_lovelace_1gpu(i+1)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description="Recieves a Gaussian output file and generate a .csv file.")
@@ -352,10 +381,3 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	solvent_evaporation(args.grofile, args.topfile, args.evapRate, args.evapTotal, args.dynamic)
-
-	# print(type(args.grofile), type(args.topfile), type(args.evapRate), type(args.evapTotal), type(args.dynamic))
-
-	# random_remover(args.grofile, args.topfile, args.evapRate)
-	# read_top_file(args.topfile)
-	# read_gro_file(args.grofile)
-	# setup_lince2(args.grofile, args.topfile, 1)
