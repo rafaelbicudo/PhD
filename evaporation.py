@@ -126,9 +126,9 @@ def nMolecules(topfile: str) -> int:
 
 	return totalMolecules, solvMolecules
 
-def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN: int):
+def output_writer(grofile: str, topfile: str, evapMolecules: list[int], cycle: int):
 	"""
-	Randomly remove the solvent and generate new .gro and .top files.
+	Writes .gro and .top files after solvent removal.
 
 	PARAMETERS:
 	grofile - the .gro file from GROMACS with atomic positions
@@ -139,9 +139,8 @@ def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evap
 						0: number of molecules is computed on-the-fly
 
 	OUTPUT:
-	1) A set of "cyclei_*.gro" and "cyclei_*.top" files with the molecular configuration and topology
-	after each solvent removal step. 
-	2) A "evaporated_*.gro" file with final configuration after complete solvent removal.
+	A set of "cycleX*.gro" and "cycleX*.top" files with the molecular configuration and topology
+	after each solvent removal step. 	
 	"""
 
 	# Create a nested dictionary with topology data
@@ -153,7 +152,7 @@ def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evap
 	# Extract the number of molecules and solvent molecules
 	totalMolecules, solvMolecules = nMolecules(topfile)
 
-	# Determine the number of atoms in the solvent and parse it to the info dictionary
+	# Determine the number of atoms in the solvent
 	countSOL = 0
 	for i in gro_data:
 		for j, k in gro_data[i].items():
@@ -162,20 +161,7 @@ def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evap
 
 	initMolecules = solvMolecules
 
-	# Random number generator
-	rng = np.random.default_rng()
-
-	# Determine the solvent molecules to be removed
-	if evapN == 0:
-		evapMolecules = rng.choice(a=solvMolecules, size=int(round(evapRate*solvMolecules/100)), replace=False, shuffle=False).tolist()
-	else:
-		evapMolecules = rng.choice(a=solvMolecules, size=evapN, replace=False, shuffle=False).tolist()
-
-	# Shift the random molecules to consider only solvent
-	evapMolecules = [x+totalMolecules-solvMolecules+1 for x in evapMolecules]
-
-	# Write the updated .gro file after a cycle of solvent removal
-	# groout = open("cycle{0}_{1}".format(str(cycle), os.path.basename(grofile).split("_")[-1]), "w")
+	# Write the updated "cycleX.gro" file after a cycle of solvent removal
 	groout = open("cycle{0}.gro".format(cycle), "w")
 
 	# Header and number of atoms
@@ -207,7 +193,6 @@ def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evap
 	groout.write(gro_data['info']['boxDim'])
 
 	# Change the number of solvent atoms in the topology file
-	# topout = open("cycle{0}_{1}".format(str(cycle), os.path.basename(topfile).split("_")[-1]), "w")
 	topout = open("cycle{0}.top".format(cycle), "w")
 
 	with open(topfile) as top:
@@ -225,9 +210,102 @@ def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evap
 			topout.write(line)
 			line = top.readline()
 
+def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN: int):
+	"""
+	Randomly remove the solvent and generate new .gro and .top files.
+
+	PARAMETERS:
+	grofile - the .gro file from GROMACS with atomic positions
+	topfile - the .top file from GROMACS with number of molecules
+	evapRate [type: float] - the rate of evaporation in percentage 
+	cycle [type: int] - integer to track the evaporation loop 
+	evapN [type: int] - n: n molecules to evaporate
+						0: number of molecules is computed on-the-fly
+
+	OUTPUT:
+	A set of "cyclei_*.gro" and "cyclei_*.top" files with the molecular configuration and topology
+	after each solvent removal step. 
+	"""
+
+	# Create a nested dictionary with topology data
+	top_data = read_top_file(topfile)
+
+	# Create a nested dictionary with molecular structure data
+	gro_data = read_gro_file(grofile)
+
+	# Extract the number of molecules and solvent molecules
+	totalMolecules, solvMolecules = nMolecules(topfile)
+
+	# Random number generator
+	rng = np.random.default_rng()
+
+	# Determine the solvent molecules to be removed
+	if evapN == 0:
+		evapMolecules = rng.choice(a=solvMolecules, size=int(round(evapRate*solvMolecules/100)), replace=False, shuffle=False).tolist()
+	else:
+		evapMolecules = rng.choice(a=solvMolecules, size=evapN, replace=False, shuffle=False).tolist()
+
+	# Shift the random molecules to consider only solvent
+	evapMolecules = [x+totalMolecules-solvMolecules+1 for x in evapMolecules]
+
+	output_writer(grofile, topfile, evapMolecules, cycle)
+
+def thermo_remover(grofile: str, topfile: str, evapRate: float, cycle: int, cluster: str):
+	"""
+	Removes molecules that escape from original PBC box after NVT simulations. 
+
+	PARAMETERS:
+	grofile - the .gro file from GROMACS with atomic positions
+	topfile - the .top file from GROMACS with number of molecules
+	evapRate [type: float] - the rate of evaporation in percentage 
+	cycle [type: int] - integer to track the evaporation loop 
+	cluster [type: str] - specify which cluster the calculation is running into ('lince2' or 'lovelace')
+
+	OUTPUT:
+	A set of "cyclei_*.gro" and "cyclei_*.top" files with the molecular configuration and topology
+	after each solvent removal step. 
+	"""
+
+	# Parse the data
+	top_data = read_top_file(topfile)
+	gro_data = read_gro_file(grofile)
+	totalMolecules, solvMolecules = nMolecules(topfile)
+
+	# Create a empty list to append molecules to be removed
+	evapMolecules = []
+
+	if cluster == 'lince2':
+		pass
+	elif cluster == 'lovelace':
+		# Double the box volume
+		sp.run("$nv_gromacs gmx editconf -f {0} -box {1} {2} {3} -o cycle{4}_2x \
+			    -noc".format(grofile, 2*float(gro_data['info']['boxDim'].split()[0]), \
+			    gro_data['info']['boxDim'].split()[1], gro_data['info']['boxDim'].split()[2], cycle), shell=True)
+
+		# Run the preprocessor to generate GROMACS binaries
+		sp.run("$nv_gromacs gmx grompp -f nvt.mdp -c cycle{0}_2x.gro -p {1} -o cycle{0}_2x.tpr -po mdout{0}_2x.mdp \
+			    -maxwarn 2".format(cycle, topfile), shell=True)
+
+		# Run the NVT simulation
+		sp.run("OMP_NUM_THREADS=4 $nv_gromacs gmx mdrun -s cycle{0}_2x.tpr -deffnm CYCLE{0}-NVT \
+		        -ntmpi 4 -nb gpu -pin on -v -ntomp 4 -update gpu -notunepme -resethway".format(cycle), shell=True)
+	else:
+		print("Thermodynamical removal is not supported in this cluster, please try random removal.")
+
+	# Find the molecules outside the original simulation box
+	for i in range(1, gro_data['info']['natoms']+1):
+		if gro_data[i]['atomsCoord'][0] >= float(gro_data['info']['boxDim'].split()[0]):
+			if gro_data[i]['molNumber'] not in evapMolecules:
+				evapMolecules.append(gro_data[i]['molNumber'])
+				print("Atom {0} from molecule {1} is outside the simulation box - {1}{2} will be removed. \n".format(i, gro_data[i]['molNumber'], gro_data[i]['resName']))
+				if gro_data[i]['resName'] != 'SOL':
+					print("Solute molecule {}{} has evaporated! \n".format(gro_data[i]['molNumber'], gro_data[i]['resName']))
+
+	output_writer('CYCLE{0}-NVT.gro'.format(cycle), topfile, evapMolecules, cycle)
+
 def setup_lince2(cycle: int):
 	"""
-	Create directories and files for running GROMACS simulations at the HPC - Lince2 cluster.
+	Set the environment and run GROMACS simulations at the HPC - Lince2 cluster.
 
 	PARAMETERS:
 	cycle [type: int] - integer to track the evaporation loop
@@ -235,6 +313,20 @@ def setup_lince2(cycle: int):
 	OUTPUT:
 	None
 	"""
+
+	# # Run the preprocessor to generate GROMACS binaries
+	# sp.run("gmx grompp -f npt.mdp -c cycle{0}.gro -p cycle{0}.top -o cycle{0}.tpr -po mdout{0}.mdp".format(cycle), shell=True)
+
+	# # Run the NPT simulation
+	# sp.run("gmx mdrun -s cycle{0}.tpr -deffnm CYCLE{0}-NPT -pin on -ntmpi 2 -ntomp 8 -maxh 0.05".format(cycle), shell=True)
+
+	# # Create a directory for the current cycle
+	# sp.run("mkdir cycle{0}".format(cycle), shell=True)
+
+	# # Copy the input files to the current cycle directory
+	# # sp.run("cp npt.mdp cycle{0}.gro cycle{0}.top cycle{0}/".format(cycle), shell=True)
+	# sp.run("cp npt.mdp cycle{0}/".format(cycle), shell=True)
+	# sp.run("mv mdout{0}.mdp cycle{0}.* CYCLE{0}-NPT.* cycle{0}/".format(cycle), shell=True)
 
 	# Create a directory for the current cycle
 	sp.run("mkdir cycle{0}".format(cycle), shell=True)
@@ -261,7 +353,7 @@ def setup_lince2(cycle: int):
 
 def setup_lovelace_1gpu(cycle: int):
 	"""
-	Create directories and files for running GROMACS simulations in 'umagpu' queue at the CENAPAD - Lovelace cluster.
+	Set the environment and run GROMACS simulations in 'umagpu' queue at the CENAPAD - Lovelace cluster.
 
 	PARAMETERS:
 	cycle [type: int] - integer to track the evaporation loop
@@ -282,15 +374,8 @@ def setup_lovelace_1gpu(cycle: int):
 	# Copy the input files to the current cycle directory
 	sp.run("cp npt.mdp cycle{0}/".format(cycle), shell=True)
 	sp.run("mv mdout{0}.mdp cycle{0}.* CYCLE{0}-NPT* cycle{0}/".format(cycle), shell=True)
-	#sp.run("cp cycle{0}.gro cycle{0}.top cycle{0}/".format(cycle), shell=True)
 
-	# Go to the current cycle directory
-	#sp.run("cd cycle{0}/".format(cycle), shell=True)
-
-	# Go back to the script directory
-	# sp.run("cd ../", shell=True)
-
-def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: float, dynamic: bool):
+def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: float, cluster: str, dynamic: bool, thermo: bool):
 	"""
 	Perform a loop of solvent removal and GROMACS NPT simulation.
 
@@ -299,13 +384,20 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 	topfile - the .top file from GROMACS with number of molecules
 	evapRate [type: float] - the rate of evaporation in percentage 
 	evapTotal [type: float] - the total evaporation in percentage 
+	cluster [type: str] - specify which cluster the calculation is running into ('lince2' or 'lovelace')
 	dynamic [type: bool] - TRUE: number of molecules to be removed is computed on-the-fly
 						   FALSE: number of molecules to be removed is fixed, based on the initial amount of solvent molecules
+	thermo [type: bool]	- TRUE: thermodynamical solvent removal is performed
+						  FALSE: random solvent removal is performed
 
 	OUTPUT:
 	A set of "cyclei*.gro" files for each solvent removal step,
 	with final configuration after complete solvent removal named "evaporated_*.gro".
 	"""
+
+	if dynamic and thermo:
+		print("Thermodynamical solvent removal is not compatible with random removal on-the-fly calculations. Please choose one.")
+		exit()
 
 	# Nested dictionary with topology data
 	top_data = read_top_file(topfile)
@@ -321,11 +413,16 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 
 	# First solvent removal
 	print("Working on cycle 1.")
-	random_remover(grofile, topfile, evapRate, 1, 0)
+	if thermo:
+		thermo_remover(grofile, topfile, evapRate, 1, cluster)
+	else:
+		random_remover(grofile, topfile, evapRate, 1, 0)
 
 	# First NPT simulation
-	# setup_lince2(1)
-	setup_lovelace_1gpu(1)
+	if cluster == 'lince2':
+		setup_lince2(1)
+	elif cluster == 'lovelace':
+		setup_lovelace_1gpu(1)
 
 	if dynamic:
 		#########################################################################
@@ -338,13 +435,38 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
 			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
 			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
+
 			if (evapRate*totalMolecules/100 >= 1):
 				random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 0)
 			else:
 				random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 1)
-			# setup_lince2(i+1)
-			setup_lovelace_1gpu(i+1)
+			
+			if cluster == 'lince2':
+				setup_lince2(i+1)
+			elif cluster == 'lovelace': 
+				setup_lovelace_1gpu(i+1)
 			i += 1
+
+	if thermo:
+		#######################################################
+		### Cycle using thermodynamical solvent evaporation ###
+		#######################################################
+
+		i = 1
+		while solvMolecules > 0:
+			print("Working on cycle %s." % str(i+1))
+			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
+			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
+			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
+
+			thermo_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, cluster)
+
+			if cluster == 'lince2':
+				setup_lince2(i+1)
+			elif cluster == 'lovelace':
+				setup_lovelace_1gpu(i+1)
+			i += 1
+
 	else:
 		#########################################################################
 		### Cycle using evapRate % over the initial total number of molecules ###
@@ -356,9 +478,13 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
 			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
 			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
+
 			random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, evapInit)
-			# setup_lince2(i+1)
-			setup_lovelace_1gpu(i+1)
+			
+			if cluster == 'lince2':
+				setup_lince2(i+1)
+			elif cluster == 'lovelace':
+				setup_lovelace_1gpu(i+1)
 			i += 1
 
 		# Remove the remaining solvent molecules
@@ -367,8 +493,11 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 		gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
 		totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
 		random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, solvMolecules)
-		# setup_lince2(i+1)
-		setup_lovelace_1gpu(i+1)
+		
+		if cluster == 'lince2':
+			setup_lince2(i+1)
+		elif cluster == 'lovelace': 
+			setup_lovelace_1gpu(i+1)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description="Recieves a Gaussian output file and generate a .csv file.")
@@ -376,8 +505,13 @@ if __name__ == '__main__':
 	parser.add_argument("topfile", help="the .top topology file.")
 	parser.add_argument("evapTotal", type=float, help="the total percentage of evaporation.")
 	parser.add_argument("evapRate", type=float, help="the evaporation rate (in percentage).")
-	parser.add_argument("--dynamic", "-d", help="if number of molecules to evaporate is computed on-the-fly.", action="store_true")
+	parser.add_argument("cluster", type=str, help="the cluster where calculations are going to be performed (lince2 or lovelace)")
+	parser.add_argument("--dynamic", "-d", help="number of molecules to evaporate is computed on-the-fly.", action="store_true")
+	parser.add_argument("--thermo", "-t", help="thermodynamical solvent removal is performed \
+						(random removal is default).", action="store_true")
 
 	args = parser.parse_args()
 
-	solvent_evaporation(args.grofile, args.topfile, args.evapRate, args.evapTotal, args.dynamic)
+	# solvent_evaporation(args.grofile, args.topfile, args.evapRate, args.evapTotal, args.cluster, args.dynamic, args.thermo)
+
+	thermo_remover(args.grofile, args.topfile, args.evapRate, 1, args.cluster)
