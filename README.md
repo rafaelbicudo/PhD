@@ -57,3 +57,15 @@ Interface with [GROMACS](https://www.gromacs.org/) developed for performing solv
 2. GROMACS topology file (.top) - `topfile`
 3. Evaporation rate (in percentage) - `evapRate`
 4. Total amount of solvent to be removed (in percentage) - `evapTotal`
+
+### LR.py
+
+Performs a linear regression to determine Ryckaert-Bellemans torsional coefficients used in the parameterization of classical dihedral energies. The optimization uses quantum mechanical calculations of a rigid scan via Gaussian09/16 code, performs a cubic interpolation in the quantum data and fit the coefficients to reproduce the polynomial. It recieves the following as input:
+
+1. Gaussian09/16 output file - `gaussianlogfile`
+2. DICEtools xyz rotations file - `xyzrotationsfile`
+3. GROMACS topology file (.itp) - `topfile`
+4. DICE .txt file - `txtfile`
+5. DICE .dfr file - `dfrfile`
+6. Number of points (configurations) in the rigid scan - `npoints`
+7. Atoms defining the torsional angle - `a1`, `a2`, `a3` and `a4`
