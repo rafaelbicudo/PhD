@@ -68,4 +68,5 @@ Performs a linear regression to determine Ryckaert-Bellemans torsional coefficie
 4. DICE .txt file - `txtfile`
 5. DICE .dfr file - `dfrfile`
 6. Number of points (configurations) in the rigid scan - `npoints`
-7. Atoms defining the torsional angle - `a1`, `a2`, `a3` and `a4`
+7. Atoms defining the torsional angle - `a1`, `a2`, `a3` and `a4
+8. Linear regression method (least-square, ridge or lasso) - `--method`, `-m`
