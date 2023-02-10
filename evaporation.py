@@ -296,10 +296,11 @@ def thermo_remover(grofile: str, topfile: str, evapRate: float, cycle: int, clus
 	for i in range(1, gro_data['info']['natoms']+1):
 		if gro_data[i]['atomsCoord'][0] >= float(gro_data['info']['boxDim'].split()[0]):
 			if gro_data[i]['molNumber'] not in evapMolecules:
-				evapMolecules.append(gro_data[i]['molNumber'])
-				print("Atom {0} from molecule {1} is outside the simulation box - {1}{2} will be removed. \n".format(i, gro_data[i]['molNumber'], gro_data[i]['resName']))
 				if gro_data[i]['resName'] != 'SOL':
-					print("Solute molecule {}{} has evaporated! \n".format(gro_data[i]['molNumber'], gro_data[i]['resName']))
+					print("Atom {0} from solute molecule {1}{2} wants to evaporate! But let's leave in here. :P \n".format(i, gro_data[i]['molNumber'], gro_data[i]['resName']))
+				else:
+					evapMolecules.append(gro_data[i]['molNumber'])
+					print("Atom {0} from molecule {1} is outside the simulation box - {1}{2} will be removed. \n".format(i, gro_data[i]['molNumber'], gro_data[i]['resName']))
 
 	output_writer('CYCLE{0}-NVT.gro'.format(cycle), topfile, evapMolecules, cycle)
 
@@ -454,6 +455,8 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 
 		i = 1
 		while solvMolecules > 0:
+			sp.run("mv mdout{0}.mdp *{0}_2x.* CYCLE{0}-NVT* cycle{0}/".format(i), shell=True)
+
 			print("Working on cycle %s." % str(i+1))
 			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
 			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
