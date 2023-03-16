@@ -217,7 +217,7 @@ def write_dih_csv(gaussianlogfile: str, txtfile: str, dfrfile: str, a1: int, a2:
 	diedEn = np.asarray(diedEn)
 
 	# Determine the "QM" torsional energy
-	enfit = enqm - min(enqm) - nben #+ diedEn[np.argmin(enqm)]
+	enfit = enqm - min(enqm) - nben + diedEn[np.argmin(enqm)]
 
 	# Write the "QM" torsional energy into the .csv file
 	fout = open('qm_scan.csv', 'w')
