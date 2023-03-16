@@ -8,6 +8,9 @@ Script to perform evaporation of solvent using GROMACS.
 [X] Run a NPT simulation.
 [X] Make a loop for complete solvent elimination.
 
+[ ] Change the code structure to run a single simulation, exploring the restart
+utility from GROMACS.
+
 OBS: Do not use a residue name with letters and numbers changing, ex: A1E2C5 -> BUG CORRECTED!
 OBS: Do not have a topology file with underscore ("_") in the name.
 OBS: Solute must be at the beginning of topology file.
