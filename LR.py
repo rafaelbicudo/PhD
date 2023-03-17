@@ -29,7 +29,7 @@ from scipy.interpolate import CubicSpline
 
 def find_bonded_atoms(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
 	"""
-	Return a list of all candidates to change during the rotation of a1-a2-a3-a4 angle.
+	Return a list of all atoms which are candidates to change during the rotation of a1-a2-a3-a4 angle.
 	
 	PARAMETERS:
 	topfile [type: str] - topology (.itp) file
@@ -203,9 +203,17 @@ def write_dih_csv(gaussianlogfile: str, txtfile: str, dfrfile: str, a1: int, a2:
 	diedClass, diedEn, nben, _ = get_potential_curve(txtfile, dfrfile, a1, a2, a3, a4, died, "", False, False, False, False)
 
 	# Consistency check for dihedral angles in classical and quantum calculations
-	if died != diedClass:
-		print("Dihedral angles do not follow the same order, please check .log and .xyz files")
-		exit()
+	diff = [died[i]-diedClass[i] for i in range(len(died))]
+
+	for angle in diff:
+		if angle > 0.001:
+			print("Dihedral angles do not follow the same order, please check .log and .xyz files")
+			print("Quantum dihedral - Classical dihedral = ", diff)
+			exit()
+
+	# if died != diedClass:
+	# 	print("Dihedral angles do not follow the same order, please check .log and .xyz files")
+	# 	exit()
 
 	# Subtract the non-bonded energy from lower QM energy configuration
 	nben = [x-nben[np.argmin(enqm)] for x in nben]
@@ -217,14 +225,14 @@ def write_dih_csv(gaussianlogfile: str, txtfile: str, dfrfile: str, a1: int, a2:
 	diedEn = np.asarray(diedEn)
 
 	# Determine the "QM" torsional energy
-	enfit = enqm - min(enqm) - nben + diedEn[np.argmin(enqm)]
+	enfit = enqm - min(enqm) - nben# + diedEn[np.argmin(enqm)]
 
 	# Write the "QM" torsional energy into the .csv file
 	fout = open('qm_scan.csv', 'w')
 
-	fout.write(',Dihedral (rad),Energy - E_min (kcal/mol) \n')
+	fout.write(',Dihedral (rad),U_tors-qm - U_tors_qm[min] (kcal/mol),E_qm - E_qm[min] (kcal/mol),Non-bonded - Non-bonded[qm_min] (kcal/mol)\n')
 	for i in range(len(died)):
-			fout.write(str(i+1) + ',' + str(died[i]) + ',' + str(enfit[i]) + '\n')
+			fout.write(str(i+1) + ',' + str(died[i]) + ',' + str(enfit[i]) + ',' + str(enqm[i]-min(enqm)) + ',' + str(nben[i]) + '\n')
 
 def write_itp_file(topfile: str, lr_data: dict):
 	"""
@@ -270,7 +278,7 @@ def write_itp_file(topfile: str, lr_data: dict):
 				else:
 					print("Not a Ryckaert-Bellemans dihedral.")
 
-def linear_regression(topfile: str, method: str):
+def linear_regression(topfile: str, method: str, lasso_alpha: float):
 	"""
 	Perform the linear regression, generate a plot with classical and "quantum" torsional energies
 	and change the C_i coefficients in the topology file.
@@ -312,9 +320,9 @@ def linear_regression(topfile: str, method: str):
 	elif method == 'ridge':
 		reg = Ridge(fit_intercept=False)
 	elif method == 'lasso':
-		reg = Lasso(fit_intercept=False)
+		reg = Lasso(alpha=lasso_alpha, max_iter=10000, fit_intercept=False)
 	else:
-		print("Either method not declared or not implemented, using the default least square method.")
+		print("Either the method is not declared or is not implemented, using the default least square method.")
 		reg = LinearRegression(fit_intercept=False)
 	
 	reg.fit(X,y)
@@ -335,14 +343,18 @@ def linear_regression(topfile: str, method: str):
 	x_plot = data[data.columns[0]].copy()
 	y_plot = np.dot(X.values, reg.coef_)
 
-	fig, ((ax1)) = plt.subplots(ncols=1, nrows=1, figsize=(5,5))
+	fig, ((ax1), (ax2)) = plt.subplots(ncols=1, nrows=2, figsize=(7, 5))
 
-	ax1.plot(ans[ans.columns[0]], ans[ans.columns[1]], "x--", c="r", label="gaussian_torsional")
-	ax1.plot(x_plot, y_plot, "x--", c="b", label="regressao_linear")
+	ax1.plot(ans[ans.columns[0]], ans[ans.columns[2]], 'o--', c="tab:purple", label="Gaussian total energy")
+	ax1.plot(x_plot, y_plot + ans[ans.columns[3]][:-1], 'x--', c="tab:green", label="Classical total energy")
+	ax1.legend()
 
-	plt.legend()
+	ax2.plot(ans[ans.columns[0]], ans[ans.columns[1]], "x--", c="tab:blue", label="Gaussian torsional energy")
+	ax2.plot(x_plot, y_plot, "x--", c="tab:orange", label="Fitted torsional energy")
+	ax2.legend()
+
 	plt.tight_layout()
-	plt.savefig("linear_regression.png")
+	plt.savefig("linear_regression.png", bbox_inches='tight', format='png', dpi=600)
 
 	# Write the linear regression coefficients in the topology file
 	write_itp_file(topfile, lr_data)
@@ -361,6 +373,7 @@ if __name__ == '__main__':
 	parser.add_argument("npoints", type=int, help="number of configurations during the scan.")
 	parser.add_argument("--method", "-m", help="the method employed in the linear regression (least-square, ridge, lasso).", 
 						default='least-square')
+	parser.add_argument("--alpha", type=float, help="the coefficient multiplying L1 penalty in Lasso linear regression.")
 
 	args = parser.parse_args()
 
@@ -368,4 +381,7 @@ if __name__ == '__main__':
 
 	write_torsional_changes(args.xyzrotationsfile, args.topfile, args.a1, args.a2, args.a3, args.a4, args.npoints)
 
-	linear_regression(args.topfile, args.method)
+	if args.alpha:
+		linear_regression(args.topfile, args.method, args.alpha)
+	else:
+		linear_regression(args.topfile, args.method, 0.1)
