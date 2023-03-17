@@ -70,3 +70,4 @@ Performs a linear regression to determine Ryckaert-Bellemans torsional coefficie
 6. Number of points (configurations) in the rigid scan - `npoints`
 7. Atoms defining the torsional angle - `a1`, `a2`, `a3` and `a4`
 8. Linear regression method (least-square, ridge or lasso) - `--method`, `-m`
+9. Lasso linear regression L1 penalty coefficient - `--alpha`
