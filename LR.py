@@ -278,6 +278,10 @@ def write_itp_file(topfile: str, lr_data: dict):
 				else:
 					print("Not a Ryckaert-Bellemans dihedral.")
 
+		while line:
+			fout.write(line)
+			line = f.readline()
+
 def linear_regression(topfile: str, method: str, lasso_alpha: float):
 	"""
 	Perform the linear regression, generate a plot with classical and "quantum" torsional energies
