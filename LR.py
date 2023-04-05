@@ -9,6 +9,9 @@ Script do the following:
 that yielded better results.
 4) Write the 6 coefficients in the topology "LR_*.itp" file.
 
+[ ] Create a function that searchs for outliers and remove them from the linear regression.
+[ ] Create an option to increase the relevance of mininum points, similar to DICEtools.
+
 Author: Rafael Bicudo Ribeiro (@rafaelbicudo) and Thiago Duarte (@thiagodsd)
 DATE: DEZ/2022
 """
@@ -25,7 +28,21 @@ from fit_torsional import shift_angle_rad
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model  import LinearRegression, Ridge, Lasso
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import CubicSpline, interp1d
+
+# def ryckaert_dihedral(coef: list, x: float) -> float:
+# 	"""
+# 	Compute the total Ryckaert-Bellemans dihedral energy for a given set of coefficients.
+
+# 	PARAMETERS: 
+# 	coef [type: list(float)] -> coefficient to the I-th order cossine, i.e, cos(x)^I.
+
+# 	OUTPUT:
+# 	The dihedral value.
+# 	"""
+
+# 	return coef[0]*np.cos(x)**0 + coef[1]*np.cos(x)**1 + coef[2]*np.cos(x)**2 + coef[3]*np.cos(x)**3
+# 	+ coef[4]*np.cos(x)**4 + coef[5]*np.cos(x)**5
 
 def find_bonded_atoms(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
 	"""
@@ -282,15 +299,17 @@ def write_itp_file(topfile: str, lr_data: dict):
 			fout.write(line)
 			line = f.readline()
 
-def linear_regression(topfile: str, method: str, lasso_alpha: float):
+def linear_regression(topfile: str, method: str, lasso_alpha: float, weight_minimums: float):
 	"""
 	Perform the linear regression, generate a plot with classical and "quantum" torsional energies
 	and change the C_i coefficients in the topology file.
 
 	PARAMETERS:
 	topfile [type: str] - topology (.itp) file
+	method [type: str] - the method used in the linear regression (least-square, ridge or lasso)
+	weight_minima [type: list] - the weights atributted to the total energy minimum points
 
-	Output:
+	OUTPUT:
 	The "linear_regression.png" and "LR_*.itp" files.
 	"""
 
@@ -318,18 +337,26 @@ def linear_regression(topfile: str, method: str, lasso_alpha: float):
 	X = df.drop(columns=["y"])
 	y = df["y"]
 
+	# Apply the weight for total energy minimum points
+	weights = np.ones(len(ans))
+
+	for i in range(len(ans)):
+		if i > 0 and i < len(ans):
+			if ans.iloc[i, 2] < ans.iloc[i-1, 2] and ans.iloc[i, 2] < ans.iloc[i+1, 2]:
+				weights[i] = weight_minimums
+
 	# Apply the linear regression model
 	if method == 'least-square':		
 		reg = LinearRegression(fit_intercept=False)
 	elif method == 'ridge':
 		reg = Ridge(fit_intercept=False)
 	elif method == 'lasso':
-		reg = Lasso(alpha=lasso_alpha, max_iter=10000, fit_intercept=False)
+		reg = Lasso(alpha=lasso_alpha, max_iter=10000000, fit_intercept=False)
 	else:
 		print("Either the method is not declared or is not implemented, using the default least square method.")
 		reg = LinearRegression(fit_intercept=False)
 	
-	reg.fit(X,y)
+	reg.fit(X, y, sample_weight=weights)
 
 	# Create a nested dictionary with the linear regression data
 	lr_data = {}	# {i: {'tors': str, 'atoms': list, 'constants': list}}
@@ -347,15 +374,30 @@ def linear_regression(topfile: str, method: str, lasso_alpha: float):
 	x_plot = data[data.columns[0]].copy()
 	y_plot = np.dot(X.values, reg.coef_)
 
+	x_plot2 = np.linspace(x_plot.min(), x_plot.max(), 300)
+	# x_plot2 = np.linspace(ans[ans.columns[0]].min(), ans[ans.columns[0]].max(), 300)
+	smooth_dih = interp1d(x_plot, y_plot, kind='cubic')
+	smooth_nben = interp1d(x_plot, ans[ans.columns[3]], kind='cubic')
+	smooth_qmE = interp1d(x_plot, ans[ans.columns[2]], kind='cubic')
+	smooth_qmDih = interp1d(x_plot, ans[ans.columns[1]], kind='cubic')
+
 	fig, ((ax1), (ax2)) = plt.subplots(ncols=1, nrows=2, figsize=(7, 5))
 
-	ax1.plot(ans[ans.columns[0]], ans[ans.columns[2]], 'o--', c="tab:purple", label="Gaussian total energy")
-	ax1.plot(x_plot, y_plot + ans[ans.columns[3]][:-1], 'x--', c="tab:green", label="Classical total energy")
-	ax1.legend()
+	# ax1.plot(ans[ans.columns[0]], ans[ans.columns[2]], 'o--', c="tab:purple", label="Gaussian total energy")
+	# ax1.plot(x_plot, y_plot + ans[ans.columns[3]], 'x--', c="tab:green", label="Classical total energy")
+	ax1.plot(x_plot2, smooth_qmE(x_plot2), '--', c="tab:purple", label="Gaussian total energy")
+	ax1.plot(x_plot2, smooth_dih(x_plot2) + smooth_nben(x_plot2), '--', c="tab:green", label="Classical total energy")
+	ax1.scatter(ans[ans.columns[0]], ans[ans.columns[2]], c="tab:purple")
+	ax1.scatter(x_plot, y_plot + ans[ans.columns[3]], c="tab:green")
+	ax1.legend(frameon=False)
 
-	ax2.plot(ans[ans.columns[0]], ans[ans.columns[1]], "x--", c="tab:blue", label="Gaussian torsional energy")
-	ax2.plot(x_plot, y_plot, "x--", c="tab:orange", label="Fitted torsional energy")
-	ax2.legend()
+	# ax2.plot(ans[ans.columns[0]], ans[ans.columns[1]], "x--", c="tab:red", label="Gaussian torsional energy")
+	# ax2.plot(x_plot, y_plot, "x--", c="tab:orange", label="Fitted torsional energy")
+	ax2.plot(x_plot2, smooth_qmDih(x_plot2), '--', c="tab:red", label="Gaussian torsional energy")
+	ax2.plot(x_plot2, smooth_dih(x_plot2), '--', c="tab:orange", label="Fitted torsional energy")
+	ax2.scatter(ans[ans.columns[0]], ans[ans.columns[1]], c="tab:red")
+	ax2.scatter(x_plot, y_plot, c="tab:orange")
+	ax2.legend(frameon=False)
 
 	plt.tight_layout()
 	plt.savefig("linear_regression.png", bbox_inches='tight', format='png', dpi=600)
@@ -377,7 +419,8 @@ if __name__ == '__main__':
 	parser.add_argument("npoints", type=int, help="number of configurations during the scan.")
 	parser.add_argument("--method", "-m", help="the method employed in the linear regression (least-square, ridge, lasso).", 
 						default='least-square')
-	parser.add_argument("--alpha", type=float, help="the coefficient multiplying L1 penalty in Lasso linear regression.")
+	parser.add_argument("--alpha", type=float, help="the coefficient multiplying L1 penalty in Lasso linear regression (default = 0.1).", default=0.1)
+	parser.add_argument("--weight", "-w", type=float, help="the weight given to total energy minima points (default = 1).", default=1)
 
 	args = parser.parse_args()
 
@@ -385,7 +428,4 @@ if __name__ == '__main__':
 
 	write_torsional_changes(args.xyzrotationsfile, args.topfile, args.a1, args.a2, args.a3, args.a4, args.npoints)
 
-	if args.alpha:
-		linear_regression(args.topfile, args.method, args.alpha)
-	else:
-		linear_regression(args.topfile, args.method, 0.1)
+	linear_regression(args.topfile, args.method, args.alpha, args.weight)
