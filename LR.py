@@ -10,7 +10,7 @@ that yielded better results.
 4) Write the 6 coefficients in the topology "LR_*.itp" file.
 
 [ ] Create a function that searchs for outliers and remove them from the linear regression.
-[ ] Create an option to increase the relevance of mininum points, similar to DICEtools.
+[X] Create an option to increase the relevance of mininum points, similar to DICEtools.
 
 Author: Rafael Bicudo Ribeiro (@rafaelbicudo) and Thiago Duarte (@thiagodsd)
 DATE: DEZ/2022
