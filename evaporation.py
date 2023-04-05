@@ -281,23 +281,23 @@ def thermo_remover(grofile: str, topfile: str, evapRate: float, cycle: int, clus
 		pass
 	elif cluster == 'lovelace':
 		# Double the box volume
-		sp.run("$nv_gromacs gmx editconf -f {0} -box {1} {2} {3} -o cycle{4}_2x \
-			    -noc".format(grofile, 2*float(gro_data['info']['boxDim'].split()[0]), \
-			    gro_data['info']['boxDim'].split()[1], gro_data['info']['boxDim'].split()[2], cycle), shell=True)
+		sp.run("$nv_gromacs gmx editconf -f {0} -box {1} {2} {3} -o cycle{4}_2z \
+			    -noc".format(grofile, gro_data['info']['boxDim'].split()[0], \
+			    gro_data['info']['boxDim'].split()[1], 2*float(gro_data['info']['boxDim'].split()[2]), cycle), shell=True)
 
 		# Run the preprocessor to generate GROMACS binaries
-		sp.run("$nv_gromacs gmx grompp -f nvt.mdp -c cycle{0}_2x.gro -p {1} -o cycle{0}_2x.tpr -po mdout{0}_2x.mdp \
+		sp.run("$nv_gromacs gmx grompp -f nvt.mdp -c cycle{0}_2z.gro -p {1} -o cycle{0}_2z.tpr -po mdout{0}_2z.mdp \
 			    -maxwarn 2".format(cycle, topfile), shell=True)
 
 		# Run the NVT simulation
-		sp.run("OMP_NUM_THREADS=4 $nv_gromacs gmx mdrun -s cycle{0}_2x.tpr -deffnm CYCLE{0}-NVT \
+		sp.run("OMP_NUM_THREADS=4 $nv_gromacs gmx mdrun -s cycle{0}_2z.tpr -deffnm CYCLE{0}-NVT \
 		        -ntmpi 4 -nb gpu -pin on -v -ntomp 4 -update gpu -notunepme -resethway".format(cycle), shell=True)
 	else:
 		print("Thermodynamical removal is not supported in this cluster, please try random removal.")
 
 	# Find the molecules outside the original simulation box
 	for i in range(1, gro_data['info']['natoms']+1):
-		if gro_data[i]['atomsCoord'][0] >= float(gro_data['info']['boxDim'].split()[0]):
+		if gro_data[i]['atomsCoord'][2] >= float(gro_data['info']['boxDim'].split()[2]):
 			if gro_data[i]['molNumber'] not in evapMolecules:
 				if gro_data[i]['resName'] != 'SOL':
 					print("Atom {0} from solute molecule {1}{2} wants to evaporate! But let's leave in here. :P \n".format(i, gro_data[i]['molNumber'], gro_data[i]['resName']))
@@ -458,7 +458,7 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 
 		i = 1
 		while solvMolecules > 0:
-			sp.run("mv mdout{0}.mdp *{0}_2x.* CYCLE{0}-NVT* cycle{0}/".format(i), shell=True)
+			sp.run("mv mdout{0}.mdp *{0}_2z.* CYCLE{0}-NVT* cycle{0}/".format(i), shell=True)
 
 			print("Working on cycle %s." % str(i+1))
 			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
