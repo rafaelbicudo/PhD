@@ -30,20 +30,6 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model  import LinearRegression, Ridge, Lasso
 from scipy.interpolate import CubicSpline, interp1d
 
-# def ryckaert_dihedral(coef: list, x: float) -> float:
-# 	"""
-# 	Compute the total Ryckaert-Bellemans dihedral energy for a given set of coefficients.
-
-# 	PARAMETERS: 
-# 	coef [type: list(float)] -> coefficient to the I-th order cossine, i.e, cos(x)^I.
-
-# 	OUTPUT:
-# 	The dihedral value.
-# 	"""
-
-# 	return coef[0]*np.cos(x)**0 + coef[1]*np.cos(x)**1 + coef[2]*np.cos(x)**2 + coef[3]*np.cos(x)**3
-# 	+ coef[4]*np.cos(x)**4 + coef[5]*np.cos(x)**5
-
 def find_bonded_atoms(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
 	"""
 	Return a list of all atoms which are candidates to change during the rotation of a1-a2-a3-a4 angle.
@@ -213,6 +199,12 @@ def write_dih_csv(gaussianlogfile: str, txtfile: str, dfrfile: str, a1: int, a2:
 	# Read the dihedrals (in degrees) and energies (in kcal/mol)
 	died, enqm = parse_en_log_gaussian(gaussianlogfile)
 
+	# Check for repeated dihedrals and delete them
+	for i in range(1, len(died)-1):
+		if died[i] - died[i-1] < 0.001:
+			del died[i]
+			del enqm[i]
+
 	# Change dihedrals to rad
 	died = [shift_angle_rad(x*np.pi/180.) for x in died]
 
@@ -227,10 +219,6 @@ def write_dih_csv(gaussianlogfile: str, txtfile: str, dfrfile: str, a1: int, a2:
 			print("Dihedral angles do not follow the same order, please check .log and .xyz files")
 			print("Quantum dihedral - Classical dihedral = ", diff)
 			exit()
-
-	# if died != diedClass:
-	# 	print("Dihedral angles do not follow the same order, please check .log and .xyz files")
-	# 	exit()
 
 	# Subtract the non-bonded energy from lower QM energy configuration
 	nben = [x-nben[np.argmin(enqm)] for x in nben]
@@ -341,7 +329,7 @@ def linear_regression(topfile: str, method: str, lasso_alpha: float, weight_mini
 	weights = np.ones(len(ans))
 
 	for i in range(len(ans)):
-		if i > 0 and i < len(ans):
+		if i > 0 and i < len(ans)-1:
 			if ans.iloc[i, 2] < ans.iloc[i-1, 2] and ans.iloc[i, 2] < ans.iloc[i+1, 2]:
 				weights[i] = weight_minimums
 
@@ -419,7 +407,7 @@ if __name__ == '__main__':
 	parser.add_argument("npoints", type=int, help="number of configurations during the scan.")
 	parser.add_argument("--method", "-m", help="the method employed in the linear regression (least-square, ridge, lasso).", 
 						default='least-square')
-	parser.add_argument("--alpha", type=float, help="the coefficient multiplying L1 penalty in Lasso linear regression (default = 0.1).", default=0.1)
+	parser.add_argument("--alpha", type=float, help="the coefficient multiplying L1 penalty in Lasso linear regression (default = 0.01).", default=0.01)
 	parser.add_argument("--weight", "-w", type=float, help="the weight given to total energy minima points (default = 1).", default=1)
 
 	args = parser.parse_args()
