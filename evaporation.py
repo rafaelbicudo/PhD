@@ -92,7 +92,7 @@ def read_gro_file(grofile: str) -> dict:
 		line = gro.readline()
 
 		# Parse the atomic data 
-		while len(line.split()) >= 6:
+		while len(line.split()) >= 5:
 			words = line.split()
 			gro_data[i] = {}
 			gro_data[i]['molNumber'] = int(line[0:5].strip())
@@ -189,7 +189,7 @@ def output_writer(grofile: str, topfile: str, evapMolecules: list[int], cycle: i
 					break
 				elif bool_:
 					groout.write('{:>5}{:<5}{:>5}{:>5}{:>8.3f}{:>8.3f}{:>8.3f}\n'.format(gro_data[i]['molNumber']-countMol, gro_data[i]['resName'], gro_data[i]['atomName'],
-					 i-countAtom, gro_data[i]['atomsCoord'][0], gro_data[i]['atomsCoord'][1], gro_data[i]['atomsCoord'][2]))
+					 i-countAtom, gro_data[i]['atomsCoord'][0], gro_data[i]['atomsCoord'][1], gro_data[i]['atomsCoord'][2]))	# {:>6}{:<11}{:>7}{:>7}{:>7}{:>7}{:>11.4f}{:>11.4f}\n
 					bool_ = False
 
 	# Simulation box dimensions
