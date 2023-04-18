@@ -41,7 +41,7 @@ Create a .csv file that provides, for each $\omega$ value, the following:
 
 ### evaporation.py
 
-Interface with [GROMACS](https://www.gromacs.org/) developed for performing solvent evaporation. By specifying the amount of solvent and the evaporation rate, the script removes solvent molecules and call GROMACS to perform NPT simulations in a loop. It recieves the following as input:
+Interface with [GROMACS](https://www.gromacs.org/) developed for performing solvent evaporation. By specifying the amount of solvent and evaporation rate, the script removes solvent molecules and call GROMACS to perform NPT simulations in a loop. It recieves the following as input:
 
 1. GROMACS molecular structure file (.gro) - `grofile`
 2. GROMACS topology file (.top) - `topfile`
