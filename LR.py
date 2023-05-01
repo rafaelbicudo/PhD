@@ -10,7 +10,9 @@ that yielded better results.
 4) Write the 6 coefficients in the topology "LR_*.itp" file.
 
 [ ] Create a function that searchs for outliers and remove them from the linear regression.
-[X] Create an option to increase the relevance of mininum points, similar to DICEtools.
+[X] Create an option to increase the relevance of mininum points, similar to DICEtools/fit_torsional.py.
+[ ] Fix the linear fit problems when removing a few angles during the scan due to the atomic nuclei overlapping. 
+	It seems that distances smaller than 0.5 Angstrom crash the code.
 
 Author: Rafael Bicudo Ribeiro (@rafaelbicudo) and Thiago Duarte (@thiagodsd)
 DATE: DEZ/2022
@@ -29,6 +31,66 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model  import LinearRegression, Ridge, Lasso
 from scipy.interpolate import CubicSpline, interp1d
+
+def check_overlap(topfile: str, xyzrotationsfile: str, cutoff: float, npoints: int):
+	"""
+	Read the atomic positions to search for atomic overlap.
+
+	PARAMETERS:
+	topfile [type: str] - topology (.itp) file
+	xyzrotationsfile [type: str] - configurations file
+	cutoff [type: float] - minimum atomic distance tolerated
+	npoints [type: int] - number of configurations during the scan
+
+	OUTPUT: 
+	Prints the overlapping atoms at a given dihedral configuration.
+	overlap_dih [type: list[float]] - list with all
+	"""
+
+	overlap_dih = []
+	atomsCoord = {}
+	i = 0
+
+	# Get the number of atoms in the molecule
+	natoms = find_natoms(topfile)
+
+	with open(xyzrotationsfile) as xyz_f:
+		line = xyz_f.readline()
+		words = line.split()
+
+		# Loop over all configurations
+		for conf in range(npoints):
+			while len(words) != 4:
+				line = xyz_f.readline()
+				words = line.split()
+
+				if "Dihedral = " in line:
+					dih = words[2]
+
+			# Parse the atomic coordinates to a dictionary (adapted from "parse_txt" function from DICEtools)
+			anum = 1
+			for i in range(natoms):
+				atomsCoord[anum] = [float(x) for x in line.split()[1:4]]
+				anum += 1
+				line = xyz_f.readline()
+				words = line.split()
+
+			# Loop over atomic pairs
+			j = 1
+			for j in range(1, natoms):
+				for i in range(j+1, natoms):
+					# Compute the distance between atoms
+					dist = np.linalg.norm(np.array(atomsCoord[i]) - np.array(atomsCoord[j]))
+
+					# Print a warning if overlapping and add the dihedral angle to the 'overlap_dih' list.
+					if dist <= cutoff:
+						print("The distance between atoms {} and {} from \'Dihedral = {}\' is {} Angs.\n"
+							"Run --remove-overlap flag to remove the overlapping configurations.\n".format(j, i, dih, round(dist, 3)))
+						
+						if float(dih) not in overlap_dih:
+							overlap_dih.append(float(dih)) 
+
+	return overlap_dih
 
 def find_bonded_atoms(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
 	"""
@@ -123,12 +185,13 @@ def write_torsional_changes(xyzrotationsfile: str, topfile: str, a1: int, a2: in
 	Read the .xyz file and find torsional angle changes.
 
 	PARAMETERS:
-	xyzrotationsfile [type: int] - configurations file
-	topfile [type: int] - topology (.itp) file
+	xyzrotationsfile [type: str] - configurations file
+	topfile [type: str] - topology (.itp) file
 	a1 [type: int] - first atom defining the dihedral angle
 	a2 [type: int] - second atom defining the dihedral angle
 	a3 [type: int] - third atom defining the dihedral angle
 	a4 [type: int] - fourth atom defining the dihedral angle
+	npoints [type: int] - number of configurations during the scan
 
 	OUTPUT:
 	The "dihedrals.csv" file.
@@ -174,6 +237,8 @@ def write_torsional_changes(xyzrotationsfile: str, topfile: str, a1: int, a2: in
 			if (column == column[0]).all():
 				del df[label]
 
+	# print(df)
+
 	# print(df.columns[0], type(df.columns[0])) 
 	df = df.sort_values(by=df.columns[0], ascending=True)
 
@@ -199,6 +264,7 @@ def write_dih_csv(gaussianlogfile: str, txtfile: str, dfrfile: str, a1: int, a2:
 	# Read the dihedrals (in degrees) and energies (in kcal/mol)
 	died, enqm = parse_en_log_gaussian(gaussianlogfile)
 
+	print(died, enqm, len(died), len(enqm))
 	# Check for repeated dihedrals and delete them
 	for i in range(1, len(died)-1):
 		if died[i] - died[i-1] < 0.001:
@@ -409,11 +475,14 @@ if __name__ == '__main__':
 						default='least-square')
 	parser.add_argument("--alpha", type=float, help="the coefficient multiplying L1 penalty in Lasso linear regression (default = 0.01).", default=0.01)
 	parser.add_argument("--weight", "-w", type=float, help="the weight given to total energy minima points (default = 1).", default=1)
+	parser.add_argument("--cutoff", "-c", type=float, help="minimum atomic distance tolerated (default = 0.5 Angs).", default=0.5)
 
 	args = parser.parse_args()
 
-	write_dih_csv(args.gaussianlogfile, args.txtfile, args.dfrfile, args.a1, args.a2, args.a3, args.a4)
+	# write_dih_csv(args.gaussianlogfile, args.txtfile, args.dfrfile, args.a1, args.a2, args.a3, args.a4)
 
-	write_torsional_changes(args.xyzrotationsfile, args.topfile, args.a1, args.a2, args.a3, args.a4, args.npoints)
+	check_overlap(args.topfile, args.xyzrotationsfile, args.cutoff, args.npoints)
 
-	linear_regression(args.topfile, args.method, args.alpha, args.weight)
+	# write_torsional_changes(args.xyzrotationsfile, args.topfile, args.a1, args.a2, args.a3, args.a4, args.npoints)
+
+	# linear_regression(args.topfile, args.method, args.alpha, args.weight)
