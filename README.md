@@ -47,6 +47,8 @@ Interface with [GROMACS](https://www.gromacs.org/) developed for performing solv
 2. GROMACS topology file (.top) - `topfile`
 3. Evaporation rate (in percentage) - `evapRate`
 4. Total amount of solvent to be removed (in percentage) - `evapTotal`
+5. Cluster where calculations are going to be performed (lovelace or lince2) - `cluster`
+6. Removes solvent molecules of the current configuration - `--dynamic`, `-d`
 
 ### LR.py
 
