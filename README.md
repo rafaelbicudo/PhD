@@ -9,6 +9,7 @@ No library is needed for running bash scripts, while for Python scripts differen
 * numpy
 * argparse
 * os
+* re
 * subprocess
 * pandas
 * matplotlib
@@ -63,3 +64,9 @@ Performs a linear regression to determine Ryckaert-Bellemans torsional coefficie
 7. Atoms defining the torsional angle - `a1`, `a2`, `a3` and `a4`
 8. Linear regression method (least-square, ridge or lasso) - `--method`, `-m`
 9. Lasso linear regression L1 penalty coefficient - `--alpha`
+
+### merge_traj.py
+
+Combine all `cycle*-traj.gro` trajectory files from GROMACS into a single one. The goal is to visualize with VMD the evaporation as a single process.
+
+1. Number of evaporation cycles - `ncycles`
