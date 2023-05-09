@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Script to merge cycle*-traj.gro with trajectory data from evaporation cycles from evaporation.py script.
+Script to merge cycle*-traj.gro with trajectory data from evaporation.py script.
 
 AUTHOR: Rafael Bicudo Ribeiro
 DATE: 05/2023
