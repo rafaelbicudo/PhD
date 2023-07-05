@@ -63,7 +63,11 @@ Performs a linear regression to determine Ryckaert-Bellemans torsional coefficie
 6. Number of points (configurations) in the rigid scan - `npoints`
 7. Atoms defining the torsional angle - `a1`, `a2`, `a3` and `a4`
 8. Linear regression method (least-square, ridge or lasso) - `--method`, `-m`
-9. Lasso linear regression L1 penalty coefficient - `--alpha`
+9. Lasso/Ridge linear regression L1/L2 penalty coefficient - `--alpha`
+10. Set weights for minimum points during the fit - `--weight`, `-w` [default=1]
+11. Remove overlap configurations - `--remove-overlap`, `-r`
+12. Cutoff for atomic overlap - `--cutoff`, `-c` [default = 0.5]
+13. Clip dihedral energies to the provided value [-value, value] - `--set-max-barrier`, `-b` [default = `None`]
 
 ### merge_traj.py
 
