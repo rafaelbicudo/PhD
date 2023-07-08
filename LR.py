@@ -246,21 +246,6 @@ def check_overlap(topfile: str, xyzrotationsfile: str, cutoff: float, npoints: i
 
 	return overlap_dih, conf_dih
 
-# def energy_max(qm_scan: str, maxvalue: float):
-# 	"""
-# 	Change the energy values higher than maxvalue to maxvalue.
-
-# 	PARAMETERS:
-# 	qm_scan [type: numpy.array] - Numpy array with non-bonded energies.
-# 	maxvalue [type: float] - Max value for energy barriers.
-
-# 	OUTPUT:
-# 	qm_scan [type: numpy.array] - Numpy array with non-bonded energies limited to maxvalue.
-# 	"""
-
-# 	print(qm_scan)
-
-
 def remove_overlap(topfile: str, xyzrotationsfile: str, cutoff: float, npoints: int):
 	"""
 	Remove the configurations with atomic overlap.
@@ -521,12 +506,12 @@ if __name__ == '__main__':
 	parser.add_argument("--weight", "-w", type=float, help="the weight given to total energy minima points (default = 1).", default=1)
 	parser.add_argument("--cutoff", "-c", type=float, help="minimum atomic distance tolerated (default = 0.5 Angs).", default=0.5)
 	parser.add_argument("--remove-overlap", "-r", help="remove the overlapping configurations.", action='store_true')
-	parser.add_argument("--set-max-barrier", "-b", help="replace the energy values higher than.", default=None)
+	parser.add_argument("--max-barrier", "-b", help="limit the torsional barriers to the provided value.", default=None)
 	parser.add_argument("--fit-from-total", "-t", help="fit the torsional angle using the total energy.", action='store_true')
 
 	args = parser.parse_args()
 
-	write_dih_csv(args.gaussianlogfile, args.txtfile, args.dfrfile, args.a1, args.a2, args.a3, args.a4, args.set_max_barrier)
+	write_dih_csv(args.gaussianlogfile, args.txtfile, args.dfrfile, args.a1, args.a2, args.a3, args.a4, args.max_barrier)
 
 	write_torsional_changes(args.xyzrotationsfile, args.topfile, args.a1, args.a2, args.a3, args.a4, args.npoints)
 
