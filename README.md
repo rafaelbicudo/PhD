@@ -67,7 +67,7 @@ Performs a linear regression to determine Ryckaert-Bellemans torsional coefficie
 10. Set weights for minimum points during the fit - `--weight`, `-w` [default=1]
 11. Remove overlap configurations - `--remove-overlap`, `-r`
 12. Cutoff for atomic overlap - `--cutoff`, `-c` [default = 0.5]
-13. Clip dihedral energies to the provided value [-value, value] - `--set-max-barrier`, `-b` [default = `None`]
+13. Clip dihedral energies to the provided value (in kcal/mol) [-value, value] - `--set-max-barrier`, `-b` [default = `None`]
 
 ### merge_traj.py
 
