@@ -489,7 +489,7 @@ def linear_regression(topfile: str, method: str, lasso_alpha: float, weight_mini
 	write_itp_file(topfile, lr_data)
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser(description="Recieves a Gaussian output file and generate a .csv file.")
+	parser = argparse.ArgumentParser(description="Performs a linear regression to determine torsional dihedral coefficients.")
 	parser.add_argument("gaussianlogfile", help="the gaussian log file.")
 	parser.add_argument("xyzrotationsfile", help="file with all torsional scan configurations.")
 	parser.add_argument("topfile", help="the topology file.")
@@ -506,7 +506,7 @@ if __name__ == '__main__':
 	parser.add_argument("--weight", "-w", type=float, help="the weight given to total energy minima points (default = 1).", default=1)
 	parser.add_argument("--cutoff", "-c", type=float, help="minimum atomic distance tolerated (default = 0.5 Angs).", default=0.5)
 	parser.add_argument("--remove-overlap", "-r", help="remove the overlapping configurations.", action='store_true')
-	parser.add_argument("--max-barrier", "-b", help="limit the torsional barriers to the provided value.", default=None)
+	parser.add_argument("--max-barrier", "-b", help="limit the torsional barriers to the provided value (in kcal/mol).", default=None)
 	parser.add_argument("--fit-from-total", "-t", help="fit the torsional angle using the total energy.", action='store_true')
 
 	args = parser.parse_args()
