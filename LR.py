@@ -30,7 +30,7 @@ from fit_torsional import shift_angle_rad
 
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.linear_model  import LinearRegression, Ridge, Lasso
+from sklearn.linear_model  import LinearRegression, Ridge, Lasso, LassoCV
 from scipy.interpolate import CubicSpline, interp1d
 
 def find_bonded_atoms(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
@@ -439,11 +439,16 @@ def linear_regression(topfile: str, method: str, lasso_alpha: float, weight_mini
 		reg = Ridge(alpha=lasso_alpha, max_iter=10000000, fit_intercept=False)
 	elif method == 'lasso':
 		reg = Lasso(alpha=lasso_alpha, max_iter=10000000, fit_intercept=False)
+	elif method == 'lassocv':
+		reg = LassoCV(eps=1e-5, max_iter=10000000, fit_intercept=False)
 	else:
 		print("Either the method is not declared or is not implemented, using the default least square method.")
 		reg = LinearRegression(fit_intercept=False)
 	
 	reg.fit(X, y, sample_weight=weights)
+
+	if method == 'lassocv':
+		print('Optimal penalty coefficient from Lasso CV regression: %s' % reg.alpha_)
 
 	# Create a nested dictionary with the linear regression data
 	lr_data = {}	# {i: {'tors': str, 'atoms': list, 'constants': list}}
