@@ -34,6 +34,7 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model  import LinearRegression, Ridge, Lasso, LassoCV
 from scipy.interpolate import CubicSpline, interp1d
 
+
 def find_bonded_atoms(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
 	"""
 	Return a list of all atoms which are candidates to change during the rotation of a1-a2-a3-a4 angle.
@@ -71,6 +72,7 @@ def find_bonded_atoms(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
 			line = f.readline()
 
 	return _atoms
+
 
 def find_dihedrals(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
 	"""
@@ -121,6 +123,7 @@ def find_dihedrals(topfile: str, a1: int, a2: int, a3: int, a4: int) -> list:
 			line = f.readline()
 
 	return tors, tors_label
+
 
 def get_dihedrals(xyzrotationsfile: str, topfile: str, a1: int, a2: int, a3: int, a4: int, npoints: int, angles: list = []) -> pd.DataFrame:
 	"""
@@ -216,6 +219,7 @@ def get_dihedrals(xyzrotationsfile: str, topfile: str, a1: int, a2: int, a3: int
 
 	return df_fit, df
 
+
 def check_overlap(topfile: str, xyzrotationsfile: str, cutoff: float, npoints: int) -> list:
 	"""
 	Read the nuclei positions to search for atomic overlap.
@@ -270,8 +274,11 @@ def check_overlap(topfile: str, xyzrotationsfile: str, cutoff: float, npoints: i
 
 					# Print a warning if overlapping and add the dihedral angle to the 'overlap_dih' list.
 					if dist <= cutoff:
-						print("The distance between atoms {} and {} from \'Dihedral = {}\' (conf = {}) is {} Angs.\n"
-							"Run --remove-overlap flag to remove the overlapping configurations.\n".format(j, i, dih, conf, round(dist, 3)))
+						if __name__ == "__main__":
+							print("The distance between atoms {} and {} from \'Dihedral = {}\' (conf = {}) is {} Angs.\n"
+								"Run --remove-overlap flag to remove the overlapping configurations.\n".format(j, i, dih, conf, round(dist, 3)))
+						else:
+							print("Removing \'Dihedral = {}\' (conf = {}) due to atomic overlap.".format(dih, conf))
 						
 						if float(dih) not in overlap_dih:
 							overlap_dih.append(float(dih)) 
@@ -279,11 +286,13 @@ def check_overlap(topfile: str, xyzrotationsfile: str, cutoff: float, npoints: i
 
 	return overlap_dih, conf_dih
 
-def remove_overlap(topfile: str, xyzrotationsfile: str, cutoff: float, npoints: int) -> None:
+
+def remove_overlap(scan: pd.DataFrame, dih_fit: pd.DataFrame, topfile: str, xyzrotationsfile: str, cutoff: float, npoints: int) -> None:
 	"""
 	Remove the configurations with atomic overlap.
 
 	PARAMETERS:
+	scan [type: pd.DataFrame] - data from classical and quantum scan simulations
 	topfile [type: str] - topology (.itp) file
 	xyzrotationsfile [type: str] - configurations file
 	cutoff [type: float] - minimum atomic distance tolerated
@@ -293,19 +302,18 @@ def remove_overlap(topfile: str, xyzrotationsfile: str, cutoff: float, npoints: 
 	Files .csv without the overlapping configurations.
 	"""
 
-	data = pd.read_csv("dihedrals.csv", index_col=0)
-	ans = pd.read_csv("qm_scan.csv", index_col=0)
-
-	# Get the overlapping confirgurations
+	# Get the overlapping configurations
 	overlap_dih, conf_dih = check_overlap(topfile, xyzrotationsfile, cutoff, npoints)
 
-	# Remove the overlapping configurations
 	for conf in conf_dih:
-		data = data.drop(conf)
-		ans = ans.drop(conf)
+		scan = scan.drop(conf)
+		dih_fit = dih_fit.drop(conf)
 
-	data.to_csv("dihedrals.csv")
-	ans.to_csv("qm_scan.csv")
+
+	scan = scan.reset_index(drop=True)
+
+	return scan, dih_fit
+
 
 def get_data(gaussianlogfile: str, txtfile: str, dfrfile: str, a1: int, a2: int, a3: int, a4: int) -> pd.DataFrame:
 	"""
@@ -366,6 +374,7 @@ def get_data(gaussianlogfile: str, txtfile: str, dfrfile: str, a1: int, a2: int,
 
 	return scan
 
+
 def rescale_data(scan: pd.DataFrame, angles: list = [], maxvalue=None) -> pd.DataFrame:
 	"""
 	Rescale the data to perform the linear regression.
@@ -423,9 +432,14 @@ def rescale_data(scan: pd.DataFrame, angles: list = [], maxvalue=None) -> pd.Dat
 
 	# Check for energy barrier limit request
 	if maxvalue is not None:
-		enfit = np.clip(enfit, -float(maxvalue), float(maxvalue))
+		# enfit = np.clip(enfit, -float(maxvalue), float(maxvalue))
+
+		# Clipping a specific column
+		scan_fit['U_tors-qm (kcal/mol)'] = scan_fit['U_tors-qm (kcal/mol)'].clip(lower=-float(maxvalue), upper=float(maxvalue))
+		scan['U_tors-qm (kcal/mol)'] = scan['U_tors-qm (kcal/mol)'].clip(lower=-float(maxvalue), upper=float(maxvalue))
 
 	return scan_fit, scan
+
 
 def write_itp_file(topfile: str, lr_data: dict):
 	"""
@@ -475,7 +489,8 @@ def write_itp_file(topfile: str, lr_data: dict):
 			fout.write(line)
 			line = f.readline()
 
-def linear_regression(scan: str, scan_fit: str, dih: str, dih_fit: str, topfile: str, method: str, lasso_alpha: float, weight_minimums: float, fit_from_total: bool) -> None:
+
+def linear_regression(scan: str, scan_fit: str, dih_fit: str, topfile: str, method: str, lasso_alpha: float, weight_minimums: float, fit_from_total: bool) -> None:
 	"""
 	Perform the linear regression, generate a plot with classical and "quantum" torsional energies
 	and change the C_i coefficients in the topology file.
@@ -521,6 +536,9 @@ def linear_regression(scan: str, scan_fit: str, dih: str, dih_fit: str, topfile:
 	X = df.drop(columns=["y"])
 	y = df["y"]
 
+	# print('X.shape: ', X.shape)
+	# print('y.shape: ', y.shape)
+
 	# Apply the weight for total energy minimum points
 	weights = np.array([])
 	
@@ -533,19 +551,6 @@ def linear_regression(scan: str, scan_fit: str, dih: str, dih_fit: str, topfile:
 				weights = np.append(weights, 1)
 		else:
 			weights = np.append(weights, 1)
-
-	# Apply weights for minimal points among the chosen ones
-	# scan_fit = scan_fit.reset_index(drop=True)
-
-	# for i in scan_fit.index.tolist():
-	# 	if i > 0 and i < len(scan)-1:
-	# 		if (scan_fit.loc[i, 'E_qm - enqm_0 (kcal/mol)'] < scan_fit.loc[i-1, 'E_qm - enqm_0 (kcal/mol)'] and 
-	# 			scan_fit.loc[i, 'E_qm - enqm_0 (kcal/mol)'] < scan_fit.loc[i+1, 'E_qm - enqm_0 (kcal/mol)']):
-	# 			weights = np.append(weights, weight_minimums)
-	# 		else:
-	# 			weights = np.append(weights, 1)
-	# 	else:
-	# 		weights = np.append(weights, 1)
 
 	# Apply the linear regression model
 	if method == 'least-square':		
@@ -597,7 +602,7 @@ def linear_regression(scan: str, scan_fit: str, dih: str, dih_fit: str, topfile:
 	smooth_dih = interp1d(x_fit, y_plot, kind='cubic')
 	smooth_nben_fit = interp1d(x_fit, scan_fit['Non-bonded - nben0 (kcal/mol)'].copy(), kind='cubic')
 
-	# Interpolate all angles available (npoints)
+	# Interpolate all angles available
 	smooth_nben = interp1d(x_full, scan['Non-bonded - nben0 (kcal/mol)'].copy(), kind='cubic')
 	smooth_qmE = interp1d(x_full, scan['E_qm - enqm_0 (kcal/mol)'].copy(), kind='cubic')
 	smooth_qmDih = interp1d(x_full, scan['U_tors-qm (kcal/mol)'].copy(), kind='cubic')
@@ -630,6 +635,7 @@ def linear_regression(scan: str, scan_fit: str, dih: str, dih_fit: str, topfile:
 	plt.tight_layout()
 	plt.savefig("linear_regression.png", bbox_inches='tight', format='png', dpi=600)
 
+
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description="Performs a linear regression to determine torsional dihedral coefficients.")
 	parser.add_argument("gaussianlogfile", help="the gaussian log file.")
@@ -656,11 +662,17 @@ if __name__ == '__main__':
 
 	data = get_data(args.gaussianlogfile, args.txtfile, args.dfrfile, args.a1, args.a2, args.a3, args.a4)
 
-	scan_fit, scan = rescale_data(data, args.angles, args.max_barrier)
-
 	dih_fit, dih = get_dihedrals(args.xyzrotationsfile, args.topfile, args.a1, args.a2, args.a3, args.a4, args.npoints, args.angles)
 
-	if args.remove_overlap:
-		remove_overlap(args.topfile, args.xyzrotationsfile, args.cutoff, args.npoints)
+	# print("dih_fit: ", dih_fit)
+	# print('dih: ', dih)
 
-	linear_regression(scan, scan_fit, dih, dih_fit, args.topfile, args.method, args.alpha, args.weight, args.fit_from_total)
+	if args.remove_overlap:
+		data, dih_fit = remove_overlap(data, dih_fit, args.topfile, args.xyzrotationsfile, args.cutoff, args.npoints)
+	else:
+		_, _ = check_overlap(args.topfile, args.xyzrotationsfile, args.cutoff, args.npoints)
+
+	scan_fit, scan = rescale_data(data, args.angles, args.max_barrier)
+
+	# linear_regression(scan, scan_fit, dih, dih_fit, args.topfile, args.method, args.alpha, args.weight, args.fit_from_total)
+	linear_regression(scan, scan_fit, dih_fit, args.topfile, args.method, args.alpha, args.weight, args.fit_from_total)
