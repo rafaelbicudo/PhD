@@ -305,12 +305,18 @@ def remove_overlap(scan: pd.DataFrame, dih_fit: pd.DataFrame, topfile: str, xyzr
 	# Get the overlapping configurations
 	overlap_dih, conf_dih = check_overlap(topfile, xyzrotationsfile, cutoff, npoints)
 
-	for conf in conf_dih:
-		scan = scan.drop(conf)
-		dih_fit = dih_fit.drop(conf)
+	print(conf_dih)
 
+	print(scan)
+
+	for conf in conf_dih:
+		scan = scan.drop(conf-1)
+		dih_fit = dih_fit.drop(conf-1)
+
+	print(scan)
 
 	scan = scan.reset_index(drop=True)
+	dih_fit = dih_fit.reset_index(drop=True)
 
 	return scan, dih_fit
 
@@ -663,9 +669,6 @@ if __name__ == '__main__':
 	data = get_data(args.gaussianlogfile, args.txtfile, args.dfrfile, args.a1, args.a2, args.a3, args.a4)
 
 	dih_fit, dih = get_dihedrals(args.xyzrotationsfile, args.topfile, args.a1, args.a2, args.a3, args.a4, args.npoints, args.angles)
-
-	# print("dih_fit: ", dih_fit)
-	# print('dih: ', dih)
 
 	if args.remove_overlap:
 		data, dih_fit = remove_overlap(data, dih_fit, args.topfile, args.xyzrotationsfile, args.cutoff, args.npoints)
