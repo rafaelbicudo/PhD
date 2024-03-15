@@ -153,7 +153,7 @@ def nMolecules(topfile: str) -> int:
 	return totalMolecules, solvMolecules
 
 
-def output_writer(grofile: str, topfile: str, evapMolecules: list[int], cycle: int):
+def output_writer(grofile: str, topfile: str, evapMolecules: list, cycle: int):
 	"""
 	Writes .gro and .top files after solvent removal.
 
@@ -346,7 +346,53 @@ def center_of_mass(atomic_dict: dict, resname: str) -> np.ndarray:
 	return cm
 
 
-def compute_dist(atomic_dict: dict, refname: str, rmname: str) -> np.ndarray:
+def smallest_dist(ref_dict: dict, dict2: str) -> np.ndarray:
+	"""
+	Compute the smallest distance between atoms in dict2 with respect to atoms in ref_dict.
+
+	PARAMETERS:
+	ref_dict [type: dict] -> reference dictionary with atomic data.
+	dict2 [type: str] -> dictionary with atomic data.
+
+	OUTPUT:
+	min_dist [type: float] - minimum distance between atoms in each dictionary.
+	"""
+
+	# Initialize the variables
+	_x = []
+	_y = []
+	_z = []
+	min_dist = 10**6
+
+	# Get the atomic positions from ref_dict
+	for _, inner_dict in ref_dict.items():
+		_x.append(inner_dict['atomsCoord'][0])
+		_y.append(inner_dict['atomsCoord'][1])
+		_z.append(inner_dict['atomsCoord'][2])
+
+	# Create a np.ndarray
+	ref_coords = np.array([_x, _y, _z], dtype=np.float64).T
+
+	# Get the smallest distance
+	for _, inner_dict in dict2.items():
+
+		# Loop over all atoms from reference
+		for atom1 in ref_coords:
+
+			# Create a np.ndarray with x, y and z coordinates of the current atom from dict2
+			atom2 = np.array([inner_dict['atomsCoord'][0], inner_dict['atomsCoord'][1], inner_dict['atomsCoord'][2]], dtype=np.float64)
+			
+			# Compute the distance between atoms
+			_dist = np.linalg.norm(atom1 - atom2)
+
+			# Update the minimum distance
+			if _dist < min_dist:
+				min_dist = _dist
+
+	return min_dist
+
+
+def compute_dist(atomic_dict: dict, refname: str, rmname: str, cm: bool) -> np.ndarray:
 	"""
 	Compute the distance between centers of mass.
 
@@ -354,6 +400,8 @@ def compute_dist(atomic_dict: dict, refname: str, rmname: str) -> np.ndarray:
 	atomic_dict [type: dict] -> the dictionary with atomic data.
 	refname [type: str] -> name of the reference residue
 	rmname [type: str] -> name of the residues to be removed
+	cm [type: bool] -> If true, compute the distance between centers of mass.
+					   If false, compute the distance between each atom.
 
 	OUTPUT:
 	dist [type: ndarray] - np.ndarray with the molNumbers and distances between center of masses.
@@ -363,8 +411,16 @@ def compute_dist(atomic_dict: dict, refname: str, rmname: str) -> np.ndarray:
 	dist = np.array([]).reshape(0, 2)
 	_molNumbers = np.array([])
 
-	# Compute the reference center of mass
-	cm_ref = center_of_mass(atomic_dict, refname)
+	if cm == True:
+		# Compute the reference center of mass
+		cm_ref = center_of_mass(atomic_dict, refname)
+	else:
+		# Get a dict with the reference residue atoms
+		if isinstance(refname, list):
+			for name in refname:
+				dict_ref = {key: in_dict for key, in_dict in atomic_dict.items() if 'resName' in in_dict and in_dict['resName'] == name}
+		elif isinstance(refname, str):
+			dict_ref = {key: in_dict for key, in_dict in atomic_dict.items() if 'resName' in in_dict and in_dict['resName'] == refname}
 
 	# Loop over the dict
 	for key, inner_dict in atomic_dict.items():
@@ -383,8 +439,6 @@ def compute_dist(atomic_dict: dict, refname: str, rmname: str) -> np.ndarray:
 
 						_molNumbers = np.append(_molNumbers, inner_dict['molNumber'])
 
-						print(_molNumbers)
-
 		elif isinstance(rmname, str):
 
 			# Check for each reference residue
@@ -401,11 +455,16 @@ def compute_dist(atomic_dict: dict, refname: str, rmname: str) -> np.ndarray:
 		# Create a dictionary with the current molecule
 		_dict = {key: in_dict for key, in_dict in atomic_dict.items() if 'molNumber' in in_dict and in_dict['molNumber'] == num}
 
-		# Compute the current residue center of mass
-		_cm = center_of_mass(_dict, rmname)
+		if cm == True:
+			# Compute the current residue center of mass
+			_cm = center_of_mass(_dict, rmname)
 
-		# Compute the distance to the reference center of mass
-		_dist = np.linalg.norm(_cm - cm_ref)
+			# Compute the distance to the reference center of mass
+			_dist = np.linalg.norm(_cm - cm_ref)
+
+		else:
+			# Compute the smallest distance between atoms from num and the reference residue
+			_dist = smallest_dist(dict_ref, _dict)
 
 		# Append it to the distance matrix
 		dist = np.append(dist, [[num, _dist]], axis=0)
@@ -428,7 +487,7 @@ def dist_rm_molecules(topfile: str, dist: np.ndarray, evapRate: float, evapN: in
 	rmMolecules [type: list] - list with molecules to be removed
 	"""
 
-	# Decrescent ordering of molecules with respect to the center of mass distances
+	# Decrescent ordering o molecules with respect to distances
 	ordered_dist = dist[np.argsort(dist[:, 1])[::-1]]
 
 	if evapN == 0:
@@ -449,7 +508,7 @@ def dist_rm_molecules(topfile: str, dist: np.ndarray, evapRate: float, evapN: in
 	return evapMolecules
 
 
-def dist_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN: int, refname: str, rmname: str):
+def dist_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN: int, refname: str, rmname: str, cm: bool):
 	"""
 	Randomly remove the solvent and generate new .gro and .top files.
 
@@ -462,6 +521,8 @@ def dist_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN:
 						0: number of molecules is computed on-the-fly
 	refname [type: str] - name of the reference residue
 	rmname [type: str] - name of the residue to be removed
+	cm [type: bool] -> If true, compute the distance between centers of mass.
+					   If false, compute the distance between each atom.
 
 	OUTPUT:
 	A set of "cyclei_*.gro" and "cyclei_*.top" files with the molecular configuration and topology
@@ -478,7 +539,8 @@ def dist_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN:
 	totalMolecules, solvMolecules = nMolecules(topfile)
 
 	# Get a vector with the distance of each center of mass to the reference center of mass
-	dist_vect = compute_dist(gro_data, refname, rmname)
+	dist_vect = compute_dist(gro_data, refname, rmname, cm)
+	print(dist_vect)
 
 	# Create evapMolecules list with molNumbers to be removed
 	evapMolecules = dist_rm_molecules(topfile, dist_vect, evapRate, evapN)
@@ -702,14 +764,15 @@ if __name__ == '__main__':
 	parser.add_argument("evapTotal", type=float, help="the total percentage of evaporation.")
 	parser.add_argument("evapRate", type=float, help="the evaporation rate (in percentage).")
 	parser.add_argument("cluster", type=str, help="the cluster where calculations are going to be performed (lince2 or lovelace)")
-	parser.add_argument("--refname", "-rf", nargs="+", type=str, help="name of the reference residue", default='UNL')
-	parser.add_argument("--rmname", "-rm", nargs="+", type=str, help="name of residue to be removed", default='SOL')
+	parser.add_argument("--refname", "-rf", nargs="+", type=str, help="name of the reference residue.", default='UNL')
+	parser.add_argument("--rmname", "-rm", nargs="+", type=str, help="name of residue to be removed.", default='SOL')
 	parser.add_argument("--dynamic", "-d", help="number of molecules to evaporate is computed on-the-fly.", action="store_true")
 	parser.add_argument("--thermo", "-t", help="thermodynamical solvent removal is performed \
 						(random removal is default).", action="store_true")
+	parser.add_argument("--center-of-mass", "-cm", help="If True, uses center of mass distances.", action="store_true", default=False)
 
 	args = parser.parse_args()
 
-	solvent_evaporation(args.grofile, args.topfile, args.evapRate, args.evapTotal, args.cluster, args.dynamic, args.thermo, args.refname, args.rmname)
+	# solvent_evaporation(args.grofile, args.topfile, args.evapRate, args.evapTotal, args.cluster, args.dynamic, args.thermo, args.refname, args.rmname)
 
-	# dist_remover(args.grofile, args.topfile, args.evapRate, 1, 0, args.refname, args.rmname)
+	dist_remover(args.grofile, args.topfile, args.evapRate, 1, 0, args.refname, args.rmname, args.center_of_mass)
