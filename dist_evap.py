@@ -77,7 +77,7 @@ def read_top_file(topfile: str) -> dict:
 			elif (len(words) == 2):
 				top_data['moltype%s' % i] = {}
 				top_data['moltype%s' % i]['resname'] = words[0]
-				top_data['moltype%s' % i]['amount'] = words[1]
+				top_data['moltype%s' % i]['amount'] = int(words[1])
 				i += 1
 			else:
 				break
@@ -114,7 +114,7 @@ def read_gro_file(grofile: str) -> dict:
 		line = gro.readline()
 
 		# Parse the atomic data 
-		while len(line.split()) >= 5:
+		while len(line.split()) >= 5 and len(line.split()) <= 6:
 			words = line.split()
 			gro_data[i] = {}
 			gro_data[i]['molNumber'] = int(line[0:5].strip())
@@ -130,7 +130,7 @@ def read_gro_file(grofile: str) -> dict:
 	return gro_data
 
 
-def nMolecules(topfile: str) -> int:
+def nMolecules(topfile: str, rmname: str) -> int:
 	"""
 	Reads the total number of molecules and solvent molecules from .top file.
 
@@ -145,25 +145,34 @@ def nMolecules(topfile: str) -> int:
 	top_data = read_top_file(topfile)
 
 	totalMolecules = 0
+	solvMolecules = 0
+
 	for j in range(len(top_data)):
-		totalMolecules += int(top_data['moltype%s' % j]['amount'])
-		if top_data['moltype%s' % j]['resname'] == 'SOL':
-			solvMolecules = int(top_data['moltype%s' % j]['amount'])
+		totalMolecules += top_data['moltype%s' % j]['amount']
+
+		if isinstance(rmname, list):
+			for name in rmname:
+				if top_data['moltype%s' % j]['resname'] == name:
+					solvMolecules = top_data['moltype%s' % j]['amount']
+		if isinstance(rmname, str):
+			if top_data['moltype%s' % j]['resname'] == rmname:
+				solvMolecules = top_data['moltype%s' % j]['amount']
 
 	return totalMolecules, solvMolecules
 
 
-def output_writer(grofile: str, topfile: str, evapMolecules: list, cycle: int):
+def output_writer(grofile: str, topfile: str, evapMolecules: list, cycle: int, rmname: str, indexfile: str):
 	"""
 	Writes .gro and .top files after solvent removal.
 
 	PARAMETERS:
 	grofile - the .gro file from GROMACS with atomic positions
 	topfile - the .top file from GROMACS with number of molecules
-	evapRate [type: float] - the rate of evaporation in percentage 
+	evapMolecules [type: list] - the molecules to be removed
 	cycle [type: int] - integer to track the evaporation loop 
 	evapN [type: int] - n: n molecules to evaporate
 						0: number of molecules is computed on-the-fly
+	indexfile [type: str] - the .ndx file from GROMACS with atomic indexes
 
 	OUTPUT:
 	A set of "cycleX*.gro" and "cycleX*.top" files with the molecular configuration and topology
@@ -177,25 +186,13 @@ def output_writer(grofile: str, topfile: str, evapMolecules: list, cycle: int):
 	gro_data = read_gro_file(grofile)
 
 	# Extract the number of molecules and solvent molecules
-	totalMolecules, solvMolecules = nMolecules(topfile)
+	totalMolecules, solvMolecules = nMolecules(topfile, rmname)
 
-	# Determine the number of atoms in the solvent
-	countSOL = 0
-	for i in gro_data:
-		for j, k in gro_data[i].items():
-			if k == 'SOL':
-				countSOL += 1
-
+	# Save the initial number of molecules to be removed
 	initMolecules = solvMolecules
 
 	# Write the updated "cycleX.gro" file after a cycle of solvent removal
 	groout = open("cycle{0}.gro".format(cycle), "w")
-
-	# Header and number of atoms
-	header = gro_data['info']['header'].split("after")[0]
-
-	groout.write("{0} after {1} cycles of solvent removal \n".format(header.strip(), cycle))
-	groout.write(" " + str(gro_data['info']['natoms'] - int(countSOL/initMolecules)*len(evapMolecules)) + "\n")
 
 	# Molecular and atomic data
 	lastMol = 0
@@ -213,32 +210,103 @@ def output_writer(grofile: str, topfile: str, evapMolecules: list, cycle: int):
 					break
 				elif bool_:
 					groout.write('{:>5}{:<5}{:>5}{:>5}{:>8.3f}{:>8.3f}{:>8.3f}\n'.format(gro_data[i]['molNumber']-countMol, gro_data[i]['resName'], gro_data[i]['atomName'],
-					 i-countAtom, gro_data[i]['atomsCoord'][0], gro_data[i]['atomsCoord'][1], gro_data[i]['atomsCoord'][2]))	# {:>6}{:<11}{:>7}{:>7}{:>7}{:>7}{:>11.4f}{:>11.4f}\n
+					int(i)-countAtom, gro_data[i]['atomsCoord'][0], gro_data[i]['atomsCoord'][1], gro_data[i]['atomsCoord'][2]))	# {:>6}{:<11}{:>7}{:>7}{:>7}{:>7}{:>11.4f}{:>11.4f}\n
 					bool_ = False
+
+	# Get the total number of atoms after removal
+	n_atoms = int(i) - countAtom
 
 	# Simulation box dimensions
 	groout.write(gro_data['info']['boxDim'])
 
-	# Change the number of solvent atoms in the topology file
+	# Close the file
+	groout.close()
+
+	# Reopen the file to write the header
+	with open("cycle{0}.gro".format(cycle), "r+") as groout:
+		# Read existing content
+		_file = groout.read()
+	    
+		# Move the file pointer to the beginning of the file
+		groout.seek(0)
+
+		# Header and number of atoms
+		header = gro_data['info']['header'].split("after")[0]
+
+		groout.write("{0} after {1} removal cycle(s)\n".format(header.strip(), cycle))
+		groout.write("{}\n".format(n_atoms))
+
+		# Write back the previously read content
+		groout.write(_file)
+
+	# Update the number of solvent atoms in the topology file
 	topout = open("cycle{0}.top".format(cycle), "w")
 
 	with open(topfile) as top:
 		line = top.readline()
-		while "SOL" not in line:
-			topout.write(line)
-			line = top.readline()
-		
-		words = line.split()
-		words[1] = str(int(words[1]) - len(evapMolecules))
-		topout.write(words[0] + '\t' + words[1] + '\n')
-		line = top.readline()
 
-		while line:
+		while "[ molecules ]" not in line:
 			topout.write(line)
 			line = top.readline()
 
+		for name in rmname:
+			while name not in line:
+				topout.write(line)
+				line = top.readline()
+			
+			words = line.split()
+			words[1] = str(int(words[1]) - len(evapMolecules))
+			topout.write(words[0] + '\t' + words[1] + '\n')
+			line = top.readline()
 
-def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN: int):
+			while line:
+				topout.write(line)
+				line = top.readline()
+
+	# # Update the atoms in the index file
+	# ndxout = open("index{0}.ndx".format(cycle), "w")
+
+	# with open(indexfile, "r") as ndx:
+	# 	line = ndx.readline()
+
+	# 	# Write all lines until find the new last atom
+	# 	while str(n_atoms) not in line:
+	# 		ndxout.write(line)
+	# 		line = ndx.readline()
+
+	# 	# Initialize a list with numbers
+	# 	_nums = []
+
+	# 	# Get the numbers up to the new last atom
+	# 	nums = line.split()
+	# 	nums = [int(num) for num in nums]
+
+	# 	for i in nums:
+	# 		if i <= n_atoms:
+	# 			_nums.append(i)
+
+	# 	# Write the last line
+	# 	for j in range(len(_nums)):
+	# 		ndxout.write("{:>5} ".format(_nums[j]))
+
+	# 	ndxout.write("\n\n")
+
+	# 	# Write all lines until find the new last atom (in the [ SYSTEM ] block)
+	# 	while "[ SYSTEM ]" not in line:
+	# 		line = ndx.readline()
+
+	# 	while str(n_atoms) not in line:
+	# 		ndxout.write(line)
+	# 		line = ndx.readline()
+
+	# 	# Write the last line
+	# 	for j in range(len(_nums)):
+	# 		ndxout.write("{:>5} ".format(_nums[j]))
+
+	# 	ndxout.write("\n\n")
+
+
+def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN: int, rmname: str):
 	"""
 	Randomly remove the solvent and generate new .gro and .top files.
 
@@ -262,7 +330,7 @@ def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evap
 	gro_data = read_gro_file(grofile)
 
 	# Extract the number of molecules and solvent molecules
-	totalMolecules, solvMolecules = nMolecules(topfile)
+	totalMolecules, solvMolecules = nMolecules(topfile, rmname)
 
 	# Random number generator
 	rng = np.random.default_rng()
@@ -276,7 +344,7 @@ def random_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evap
 	# Shift the random molecules to consider only solvent
 	evapMolecules = [x+totalMolecules-solvMolecules+1 for x in evapMolecules]
 
-	output_writer(grofile, topfile, evapMolecules, cycle)
+	output_writer(grofile, topfile, evapMolecules, cycle, rmname)
 
 
 def center_of_mass(atomic_dict: dict, resname: str) -> np.ndarray:
@@ -472,7 +540,7 @@ def compute_dist(atomic_dict: dict, refname: str, rmname: str, cm: bool) -> np.n
 	return dist
 
 
-def dist_rm_molecules(topfile: str, dist: np.ndarray, evapRate: float, evapN: int) -> list:
+def dist_rm_molecules(topfile: str, dist: np.ndarray, evapRate: float, evapN: int, rmname: str) -> list:
 	"""
 	Select the molecules to be removed using the distance criterion.
 
@@ -493,7 +561,7 @@ def dist_rm_molecules(topfile: str, dist: np.ndarray, evapRate: float, evapN: in
 	if evapN == 0:
 
 		# Extract the number of molecules to be removed
-		_, rmMolecules = nMolecules(topfile)
+		_, rmMolecules = nMolecules(topfile, rmname)
 
 		# Compute the amount of molecules to be removed
 		_nMol = int(round(evapRate*rmMolecules/100, 0))
@@ -508,7 +576,7 @@ def dist_rm_molecules(topfile: str, dist: np.ndarray, evapRate: float, evapN: in
 	return evapMolecules
 
 
-def dist_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN: int, refname: str, rmname: str, cm: bool):
+def dist_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN: int, refname: str, rmname: str, cm: bool, indexfile: str):
 	"""
 	Randomly remove the solvent and generate new .gro and .top files.
 
@@ -523,6 +591,7 @@ def dist_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN:
 	rmname [type: str] - name of the residue to be removed
 	cm [type: bool] -> If true, compute the distance between centers of mass.
 					   If false, compute the distance between each atom.
+	indexfile [type: str] - the .ndx file from GROMACS with atomic indexes
 
 	OUTPUT:
 	A set of "cyclei_*.gro" and "cyclei_*.top" files with the molecular configuration and topology
@@ -536,17 +605,16 @@ def dist_remover(grofile: str, topfile: str, evapRate: float, cycle: int, evapN:
 	gro_data = read_gro_file(grofile)
 
 	# Extract the number of molecules and solvent molecules
-	totalMolecules, solvMolecules = nMolecules(topfile)
+	totalMolecules, solvMolecules = nMolecules(topfile, rmname)
 
 	# Get a vector with the distance of each center of mass to the reference center of mass
 	dist_vect = compute_dist(gro_data, refname, rmname, cm)
-	print(dist_vect)
 
 	# Create evapMolecules list with molNumbers to be removed
-	evapMolecules = dist_rm_molecules(topfile, dist_vect, evapRate, evapN)
+	evapMolecules = dist_rm_molecules(topfile, dist_vect, evapRate, evapN, rmname)
 
 	# Write the .gro and .top files
-	output_writer(grofile, topfile, evapMolecules, cycle)
+	output_writer(grofile, topfile, evapMolecules, cycle, rmname, indexfile)
 
 
 def setup_lince2(cycle: int):
@@ -609,21 +677,46 @@ def setup_lovelace_1gpu(cycle: int):
 	None
 	"""
 
-	# Run the preprocessor to generate GROMACS binaries
-	sp.run("$nv_gromacs gmx grompp -f npt.mdp -c cycle{0}.gro -p cycle{0}.top -o cycle{0}.tpr -po mdout{0}.mdp -maxwarn 2".format(cycle), shell=True)
-	
-	# Run the NPT simulation
+	# Run the preprocessor to generate GROMACS binaries for energy minimization
+	sp.run("$nv_gromacs gmx grompp -f em.mdp -c cycle{0}.gro -r cycle{0}.gro -p cycle{0}.top -o em{0}.tpr -po em{0}.mdp -maxwarn 2".format(cycle), shell=True)
+
+	# Run the energy minimization
+	sp.run("OMP_NUM_THREADS=4 $nv_gromacs gmx mdrun -s em{0}.tpr -deffnm EM{0} -c EM{0}.gro -ntmpi 4 -nb gpu -pin on -v -ntomp 4 -notunepme -resethway".format(cycle), shell=True)
+
+	# Run the preprocessor to generate GROMACS binaries for NPT thermalisation with fixed protein
+	sp.run("$nv_gromacs gmx grompp -f pr.mdp -c EM{0}.gro -r EM{0}.gro -p cycle{0}.top -o pr{0}.tpr -po pr{0}.mdp -maxwarn 2".format(cycle), shell=True)
+
+	# Run the NPT thermalisation with fixed protein (20 ps)
+	sp.run("OMP_NUM_THREADS=4 $nv_gromacs gmx mdrun -s pr{0}.tpr -deffnm PR{0} -c PR{0}.gro -ntmpi 4 -nb gpu -pin on -v -ntomp 4 -notunepme -resethway".format(cycle), shell=True)
+
+	# Run the preprocessor to generate GROMACS binaries for NPT thermalisation
+	sp.run("$nv_gromacs gmx grompp -f eq-npt.mdp -c PR{0}.gro -p cycle{0}.top -o cycle{0}.tpr -po eq-npt{0}.mdp -maxwarn 2".format(cycle), shell=True)
+
+	# Run the NPT thermalisation (10 ns)
 	sp.run("OMP_NUM_THREADS=4 $nv_gromacs gmx mdrun -s cycle{0}.tpr -deffnm CYCLE{0}-NPT -c CYCLE{0}-NPT.gro -ntmpi 4 -nb gpu -pin on -v -ntomp 4 -notunepme -resethway".format(cycle), shell=True)
 
 	# Create a directory for the current cycle
 	sp.run("mkdir cycle{0}".format(cycle), shell=True)
 
-	# Copy the input files to the current cycle directory
-	sp.run("cp npt.mdp cycle{0}/".format(cycle), shell=True)
-	sp.run("mv mdout{0}.mdp cycle{0}.* CYCLE{0}-NPT* cycle{0}/".format(cycle), shell=True)
+	# Move the files to the current directory
+	# sp.run("mv em{0}.mdp pr{0}.mdp eq-npt{0}.mdp index{0}.ndx cycle{0}* EM{0}* em{0}* pr{0}* PR{0}* CYCLE{0}-NPT* cycle{0}/".format(cycle), shell=True)
+	sp.run("mv em{0}* pr{0}* eq-npt{0}* cycle{0}* EM{0}* PR{0}* CYCLE{0}-NPT* cycle{0}/".format(cycle), shell=True)
+
+	# # Run the preprocessor to generate GROMACS binaries for NPT thermalisation
+	# sp.run("$nv_gromacs gmx grompp -f npt.mdp -c cycle{0}.gro -p cycle{0}.top -o cycle{0}.tpr -po mdout{0}.mdp -maxwarn 2".format(cycle), shell=True)
+	
+	# # Run the NPT simulation
+	# sp.run("OMP_NUM_THREADS=4 $nv_gromacs gmx mdrun -s cycle{0}.tpr -deffnm CYCLE{0}-NPT -c CYCLE{0}-NPT.gro -ntmpi 4 -nb gpu -pin on -v -ntomp 4 -notunepme -resethway".format(cycle), shell=True)
+
+	# # Create a directory for the current cycle
+	# sp.run("mkdir cycle{0}".format(cycle), shell=True)
+
+	# # Copy the input files to the current cycle directory
+	# sp.run("cp npt.mdp cycle{0}/".format(cycle), shell=True)
+	# sp.run("mv mdout{0}.mdp cycle{0}.* CYCLE{0}-NPT* cycle{0}/".format(cycle), shell=True)
 
 
-def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: float, cluster: str, dynamic: bool, thermo: bool, refname: str, rmname: str):
+def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: float, cluster: str, dynamic: bool, thermo: bool, refname: str, rmname: str, cm: bool, indexfile: str):
 	"""
 	Perform a loop of solvent removal and GROMACS NPT simulation.
 
@@ -639,6 +732,7 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 						  FALSE: random solvent removal is performed
 	refname [type: str] - name of the reference residue
 	rmname [type: str] - name of the residue to be removed
+	indexfile [type: str] - the .ndx file from GROMACS with atomic indexes
 
 	OUTPUT:
 	A set of "cyclei*.gro" files for each solvent removal step,
@@ -656,7 +750,7 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 	gro_data = read_gro_file(grofile)
 
 	# Number of molecules and solvent molecules
-	totalMolecules, solvMolecules = nMolecules(topfile)
+	totalMolecules, solvMolecules = nMolecules(topfile, rmname)
 
 	# Number of solvent molecules to evaporate at the initial cycle
 	evapInit = round(evapRate*solvMolecules/100)
@@ -667,7 +761,7 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 		thermo_remover(grofile, topfile, evapRate, 1, cluster)
 	else:
 		# random_remover(grofile, topfile, evapRate, 1, 0)
-		dist_remover(grofile, topfile, evapRate, 1, 0, refname, rmname)
+		dist_remover(grofile, topfile, evapRate, 1, 0, refname, rmname, cm, indexfile)
 
 	# First NPT simulation
 	if cluster == 'lince2':
@@ -685,14 +779,14 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 			print("Working on cycle %s." % str(i+1))
 			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
 			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
-			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
+			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i), rmname)
 
 			if (evapRate*totalMolecules/100 >= 1):
 				# random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 0)
-				dist_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 0, refname, rmname)
+				dist_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 0, refname, rmname, cm, indexfile)
 			else:
 				# random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 1)
-				dist_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 1, refname, rmname)
+				dist_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, 1, refname, rmname, cm, indexfile)
 			
 			if cluster == 'lince2':
 				setup_lince2(i+1)
@@ -712,7 +806,7 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 			print("Working on cycle %s." % str(i+1))
 			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
 			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
-			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
+			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i), rmname)
 
 			thermo_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, cluster)
 
@@ -732,10 +826,10 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 			print("Working on cycle %s." % str(i+1))
 			top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
 			gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
-			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
+			totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i), rmname)
 
 			# random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, evapInit)
-			dist_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, evapInit, refname, rmname)
+			dist_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, evapInit, refname, rmname, cm, indexfile)
 			
 			if cluster == 'lince2':
 				setup_lince2(i+1)
@@ -747,9 +841,9 @@ def solvent_evaporation(grofile: str, topfile: str, evapRate: float, evapTotal: 
 		print("Working on cycle %s." % str(i+1))
 		top_data = read_top_file("cycle{0}/cycle{0}.top".format(i))
 		gro_data = read_gro_file("cycle{0}/CYCLE{0}-NPT.gro".format(i))
-		totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i))
+		totalMolecules, solvMolecules = nMolecules("cycle{0}/cycle{0}.top".format(i), rmname)
 		# random_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, solvMolecules)
-		dist_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, solvMolecules, refname, rmname)
+		dist_remover("cycle{0}/CYCLE{0}-NPT.gro".format(i), "cycle{0}/cycle{0}.top".format(i), evapRate, i+1, solvMolecules, refname, rmname, cm, indexfile)
 		
 		if cluster == 'lince2':
 			setup_lince2(i+1)
@@ -770,9 +864,20 @@ if __name__ == '__main__':
 	parser.add_argument("--thermo", "-t", help="thermodynamical solvent removal is performed \
 						(random removal is default).", action="store_true")
 	parser.add_argument("--center-of-mass", "-cm", help="If True, uses center of mass distances.", action="store_true", default=False)
+	parser.add_argument("--indexfile", "-n", type=str, help="name of index file.", default="index.ndx")
 
 	args = parser.parse_args()
 
-	# solvent_evaporation(args.grofile, args.topfile, args.evapRate, args.evapTotal, args.cluster, args.dynamic, args.thermo, args.refname, args.rmname)
+	solvent_evaporation(args.grofile, args.topfile, args.evapRate, args.evapTotal, args.cluster, args.dynamic, args.thermo, args.refname, args.rmname, args.center_of_mass, args.indexfile)
 
-	dist_remover(args.grofile, args.topfile, args.evapRate, 1, 0, args.refname, args.rmname, args.center_of_mass)
+	# dist_remover(args.grofile, args.topfile, args.evapRate, 1, 0, args.refname, args.rmname, args.center_of_mass)
+
+	# totalMolecules, solvMolecules = nMolecules(args.topfile, args.rmname)
+
+	# evapMol = [2000, 1999, 1998, 1997]
+	# output_writer(args.grofile, args.topfile, evapMol, 0, args.rmname, args.indexfile)
+
+
+
+
+
