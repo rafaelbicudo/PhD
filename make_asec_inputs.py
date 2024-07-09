@@ -345,7 +345,7 @@ def main() -> None:
         for sublist in args.atomnums:
             allatomnums.extend(sublist)
 
-    # Get the list with atoms treated with QM
+    # Get the list of atoms treated with QM
     qm_atoms, _ = get_QM_atoms(args.grofile, allatomnums, args.residues, args.resnums)
 
     # Write the Gaussian input file
