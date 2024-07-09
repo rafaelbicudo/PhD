@@ -156,54 +156,76 @@ def get_QM_atoms(
     if atomnums and not residues:
         qm_atoms = atomnums
 
+        # Get the atom type and residue of each atom
+        res = []
+        for i in atomnums:
+            for j in range(len(gro_data["resname"])):
+                if gro_data["atomnum"][j] == i:
+                    res.append(gro_data["resname"][j])
+
     elif not atomnums and residues:
         print(f"Selecting residue names {residues} with residue numbers {resnums}.\n")
 
         qm_atoms = []
+        res = []
         for i in residues:
             for j in range(len(gro_data["resname"])):
                 if gro_data["resname"][j] == i:
                     for k in resnums:
                         if k == gro_data["resnum"][j]:
                             qm_atoms.append(gro_data["atomnum"][j])
+                            res.append(i)
 
     else:
         print('Please provide atom numbers or residues for the QM atoms.')
         sys.exit()
 
-    return qm_atoms
+    return qm_atoms, res
 
 
 def get_charge(
-    itpfile: str,
-    atom_name: str
+    itpfile: list,
+    atom_name: str,
+    res_name: str
 ) -> float:
-    """Get the charge from the .itp file.
+    """Get the charge from the .itp file(s).
 
     Adapted from "get_configs_from_gro.py "
     (https://github.com/rafaelbicudo/PhD).
 
     Args:
-        itpfile (str): .itp file name.
+        itpfile (str): list with .itp file names.
         atom_name (str): name of the atom.
+        res_name (str): name of the residue.
 
     Returns:
         charge (float): charge of "atom_name".
     """
 
-    # Get the data dictionary
-    itp_data = read_itp_file(itpfile)
+    # Loop over all .itp files
+    for file in itpfile:
 
-    # Get the charge
-    for i in range(len(itp_data["atomname"])):
-        if itp_data["atomname"][i] == atom_name:
-            charge = itp_data["atomcharge"][i]
+        # Get the data dictionary
+        itp_data = read_itp_file(file)
 
-    return charge
+        # Loop over all atom names
+        for i in range(len(itp_data["atomname"])):
+            
+            # Check for matching atom names
+            if itp_data["atomname"][i] == atom_name:
+
+                # Check for matching residue names
+                if itp_data["resname"][i] == res_name:
+
+                    charge = itp_data["atomcharge"][i]
+                    return charge
+                
+    print("Couldn't find the atom in the topology file.")
+    sys.exit()
 
 
 def write_asec_format(
-    itpfile: str,
+    itpfile: list[str],
     qm_atoms: list,
     configs_dir: str,
     keywords: str,
@@ -258,7 +280,7 @@ def write_asec_format(
                     if gro_data["atomnum"][j] not in qm_atoms:
 
                         # Get the charge
-                        atom_charge = get_charge(itpfile, gro_data["atomname"][j])
+                        atom_charge = get_charge(itpfile, gro_data["atomname"][j], gro_data["resname"][j])
 
                         # Write the coordinates and partial charge
                         fout.write("{:>.3f}\t{:>.3f}\t{:>.3f}\t{:>.4f}\n".format(
@@ -273,7 +295,7 @@ def write_asec_format(
                     if gro_data["atomnum"][j] not in qm_atoms:
 
                         # Get the charge
-                        atom_charge = get_charge(itpfile, gro_data["atomname"][j])
+                        atom_charge = get_charge(itpfile, gro_data["atomname"][j], gro_data["resname"][j])
 
                         # Write the coordinates and partial charge
                         fout.write("{:>.3f}\t{:>.3f}\t{:>.3f}\t{:>.4f}\n".format(
@@ -305,7 +327,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Extract configurations from Gromos87 (.gro) files.")
 
     parser.add_argument("grofile", help="reference .gro configuration file.", type=str)
-    parser.add_argument("itpfile", help="topology file (.itp) from GROMACS.", type=str)
+    parser.add_argument("itpfile", help="topology file(s) (.itp) from GROMACS.", nargs="+", type=str, default=[])
     parser.add_argument("--atomnums", "-an", help="list of atom numbers treated with QM.", nargs="+", type=parse_range, default=[])
     parser.add_argument("--residues", "-res", help="list of residues treated with QM.", nargs="+", type=str, default=[])
     parser.add_argument("--resnums", "-rn", help="number of the residue(s) to be treated with QM.", nargs="+", type=int, default=[1])
@@ -324,7 +346,7 @@ def main() -> None:
             allatomnums.extend(sublist)
 
     # Get the list with atoms treated with QM
-    qm_atoms = get_QM_atoms(args.grofile, allatomnums, args.residues, args.resnums)
+    qm_atoms, _ = get_QM_atoms(args.grofile, allatomnums, args.residues, args.resnums)
 
     # Write the Gaussian input file
     write_asec_format(args.itpfile, qm_atoms, args.configs_dir, args.keywords, args.charge, args.spin_multiplicity, args.output)
