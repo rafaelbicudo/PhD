@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 """Creates an input file from .gro configurations to perform
-    ASEC calculations using Gaussian09/16.
+   ASEC calculations using Gaussian09/16.
     
-    Authors: Rafael Bicudo Ribeiro and Leandro Rezende Franco
-    DATE: 09/07/2024
+   Authors: Rafael Bicudo Ribeiro and Leandro Rezende Franco
+   DATE: 09/07/2024
 """
-
 
 import argparse
 import os
@@ -14,11 +13,10 @@ import sys
 
 
 # Functions
-
 def read_gro_file(grofile: str) -> dict:
     """Extract data from Gromos87 file.
 
-    Adapted from "get_configs_from_gro.py"
+    Adapted from "set_gaussian_qmmm.py"
     (https://github.com/rafaelbicudo/PhD).
 
     Args:
@@ -77,7 +75,7 @@ def read_gro_file(grofile: str) -> dict:
 def read_itp_file(itpfile: str) -> dict:
     """Extract data from GROMACS topology (.itp) file.
 
-    Adapted from "get_configs_from_gro.py"
+    Adapted from "set_gaussian_qmmm.py"
     (https://github.com/rafaelbicudo/PhD).
 
     Args:
@@ -87,28 +85,29 @@ def read_itp_file(itpfile: str) -> dict:
         data (dict): data from .itp file.
     """
 
-    data = {"atomtype"   : [],
-            "resname"    : [],
-            "atomname"   : [],
-            "atomcharge" : []
-            }
+    def parse_file(f) -> None:
+        """Reads .itp files and parse the data.
 
-    # Read the itpfile
-    with open(itpfile, "r") as f:
+        Args:
+            f (_io.TextIOWrapper): _description_
+        """
         line = f.readline()
 
-        # Get the atom data
+        # Get the atomic data
         while "[ atoms ]" not in line: 
             line = f.readline()
 
-        line = f.readline()
-
-        while "[ " not in line:
-            if line.startswith(";") or len(line.split()) == 0:
-                line = f.readline()
-
+        while line:
+            line = f.readline()
+            if line.strip() == "" or line.startswith("[ "):
+                break 
+            elif line.startswith(";"):
+                pass
             else:
                 words = line.split()
+
+                # Get the atom number
+                data["atomnum"].append(words[0])
 
                 # Get the atom type
                 data["atomtype"].append(words[1])
@@ -122,8 +121,23 @@ def read_itp_file(itpfile: str) -> dict:
                 # Get the atomic charge    
                 data["atomcharge"].append(float(words[6]))
 
-                line = f.readline()
+    data = {"atomnum"    : [],
+            "atomtype"   : [],
+            "resname"    : [],
+            "atomname"   : [],
+            "atomcharge" : []
+            }
 
+    # Read the topology file(s)
+    if isinstance(itpfile, list):
+        for file in itpfile:
+            with open(file, "r") as f:
+                parse_file(f)
+
+    else:
+        with open(itpfile, "r") as f:
+            parse_file(f)
+                
     return data
 
 
@@ -220,7 +234,7 @@ def get_charge(
                     charge = itp_data["atomcharge"][i]
                     return charge
                 
-    print("Couldn't find the atom in the topology file.")
+    print("Couldn't find the atom in the topology file(s).")
     sys.exit()
 
 
@@ -232,7 +246,6 @@ def write_asec_format(
     charge: int,
     spin_mult: int,
     output: str = "asec_coords.txt"
-
 ) -> None:
 
     # Get the number of configurations
@@ -240,6 +253,9 @@ def write_asec_format(
     for file in os.listdir(configs_dir):
         if file.endswith(".gro"):
             n_configs += 1
+
+    # Print the amount of configurations
+    print(f"Considering {n_configs} configurations found in '{configs_dir}' directory.\n")
 
     # Write the coordinates for the Gaussian input file
     with open(f"{output}", "w") as fout:
@@ -253,6 +269,8 @@ def write_asec_format(
         # Loop over all configuration files
         first = True
         for f in os.listdir(configs_dir):
+            # Track the current configuration
+            print(f"Working on configuration: {f}")
 
             # Get the data dictionaries
             gro_data = read_gro_file(os.path.join(configs_dir, f))
@@ -326,12 +344,12 @@ def parse_range(value: str):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract configurations from Gromos87 (.gro) files.")
 
-    parser.add_argument("grofile", help="reference .gro configuration file.", type=str)
     parser.add_argument("itpfile", help="topology file(s) (.itp) from GROMACS.", nargs="+", type=str, default=[])
-    parser.add_argument("--atomnums", "-an", help="list of atom numbers treated with QM.", nargs="+", type=parse_range, default=[])
+    parser.add_argument("--grofile", "-gro", help="reference .gro configuration file.", type=str)
+    parser.add_argument("--configs_dir", "-dir", help="path to the directory with .gro configurations.", type=str)
+    parser.add_argument("--atomnums", "-an", help="list of atom numbers treated with QM (e.g. 1-10 22 82-93).", nargs="+", type=parse_range, default=[])
     parser.add_argument("--residues", "-res", help="list of residues treated with QM.", nargs="+", type=str, default=[])
     parser.add_argument("--resnums", "-rn", help="number of the residue(s) to be treated with QM.", nargs="+", type=int, default=[1])
-    parser.add_argument("--configs_dir", "-dir", help="path to the directory with .gro configurations.", type=str, default=".")
     parser.add_argument("--keywords", "-k", help="Gaussian keywords for the calculation.", nargs="+", type=str, default=["B3LYP/6-31G(d,p) Charge"])
     parser.add_argument("--charge", "-c", help="total charge of the system.", type=int, default=0)
     parser.add_argument("--spin_multiplicity", "-ms", help="spin multiplicity of the system.", type=int, default=1)
@@ -339,14 +357,32 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if args.grofile and args.configs_dir:
+        print("Choose between a single '-gro' file or the directory 'configs_dir' with more than one file.")
+        sys.exit()
+    elif not args.grofile and not args.configs_dir:
+        print("Provide a '-gro' file or a 'configs_dir' directory with files.")
+        sys.exit()
+
     # Creates a single list of with atom numbers, to enable range formats, e.g. "1-10 25 33-38".
     allatomnums = []
     if args.atomnums:
         for sublist in args.atomnums:
             allatomnums.extend(sublist)
 
-    # Get the list of atoms treated with QM
-    qm_atoms, _ = get_QM_atoms(args.grofile, allatomnums, args.residues, args.resnums)
+    if args.configs_dir:
+        # Get the list of atoms treated with QM
+        for root, _, files in os.walk(args.configs_dir):
+            # Use the first file as reference file
+            ref_file = os.path.join(root, files[0])
+
+            qm_atoms, _ = get_QM_atoms(ref_file,
+                                       allatomnums,
+                                       args.residues,
+                                       args.resnums)
+    else:
+        # Get the list of atoms treated with QM
+        qm_atoms, _ = get_QM_atoms(args.grofile, allatomnums, args.residues, args.resnums)
 
     # Write the Gaussian input file
     write_asec_format(args.itpfile, qm_atoms, args.configs_dir, args.keywords, args.charge, args.spin_multiplicity, args.output)
