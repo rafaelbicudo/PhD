@@ -782,11 +782,12 @@ def get_distant_charge(file: str) -> float | str:
     return larg_dist, larg_line
 
 
-def check_total_charge(file: str, test: bool) -> None:
+def check_total_charge(file: str, configs_dir: str, test: bool) -> None:
     """Add the spurious charge to the most distant point charge.  
 
     Args:
         file (str): name of the Gaussian file.
+        configs_dir (str): directory with files
         test (bool): avoid searching for charges during visualization tests.
     Returns:
         A "neutral_{file}" file.
@@ -819,12 +820,12 @@ def check_total_charge(file: str, test: bool) -> None:
     # Neutralize the total charge if it isn't zero
     if not test:
         if round(total_charge, 5) == 0:
-            print(f"Total charge is 0.00000. No need for fixing numerical fluctuations.")
+            print(f"Total charge is 0.00000. No need for fixing numerical fluctuations.\n")
         else:
             # Print a warning for big charges
             if total_charge > 0.1:
                 print("WARNING: Total charge is bigger than usual numerical fluctuations." \
-                      "Make sure that the charge is consistent with the expected total charge.")
+                      "Make sure that the charge is consistent with the expected total charge.\n")
 
             # Find the most distant charge (in average) to the molecule
             larg_dist, larg_line = get_distant_charge(file)
@@ -840,15 +841,22 @@ def check_total_charge(file: str, test: bool) -> None:
                         words[-1] = str(float(words[-1]) - float(total_charge))
                         lines[i] = '\t'.join(words) + "\n"
 
-            with open(f"neutral_{file}", "w") as fout:
-                for line in lines:
-                    fout.write(line)
+            if configs_dir:
+                # Get the name of the file
+                _file = file.split("/")[-1]
+                with open(f"input_files/neutral_{_file[6:]}", "w") as fout:
+                    for line in lines:
+                        fout.write(line)
+            else:
+                with open(f"neutral_{file}", "w") as fout:
+                    for line in lines:
+                        fout.write(line)
 
             print(f"Total charge is {total_charge:.5f} due to numerical fluctuations.\n"
                   f"Charge {-total_charge:.5f} was added to the most " \
-                  f"distant partial charge in file neutral_{file}.\n" \
+                  f"distant partial charge in file 'neutral_*'.\n" \
                   f"The most distant partial charge is located at {tuple(larg_line.split()[:3])} AA " \
-                  f"and the smallest distance of it to any QM atom is {larg_dist:.3f} AA.")
+                  f"and the smallest distance of it to any QM atom is {larg_dist:.3f} AA.\n")
 
 
 def main() -> None:
@@ -856,7 +864,7 @@ def main() -> None:
     
     parser.add_argument("itpfile", help="topology file(s) (.itp) from GROMACS.", nargs="+", type=str, default=[])
     parser.add_argument("--grofile", "-gro", help="reference .gro configuration file.", type=str)
-    parser.add_argument("--configs_dir", "-dir", help="path to the directory with .gro configurations.", type=str)
+    parser.add_argument("--configs_dir", "-dir", help="path to the directory with .gro configurations.", type=str, default='')
     parser.add_argument("--atomnums", "-an", help="list of atom numbers treated with QM (e.g. 1-10 22 82-93).", nargs="+", type=parse_range, default=[])
     parser.add_argument("--residues", "-res", help="list of residues treated with QM.", nargs="+", type=str, default=[])
     parser.add_argument("--resnums", "-rn", help="number of the residue(s) to be treated with QM.", nargs="+", type=int, default=[1])
@@ -887,6 +895,12 @@ def main() -> None:
             # Loop over all files in the configuration's directory
             for _, _, files in os.walk(args.configs_dir):
                 for file in files:
+                    # Track the configuration
+                    _text = f"Working on configuration '{file}'..."
+                    print("#" * len(_text))
+                    print(f"{_text}")
+                    print("#" * len(_text), "\n")
+
                     # Hardcoded section to set residue numbers for the PQx8O-T polymatic example
                     if args.fix_resnum:
                         fix_resnum(file, args.itpfile)
@@ -926,7 +940,11 @@ def main() -> None:
                         args.test,
                     )
 
-                    check_total_charge(file, args.test)
+                    check_total_charge(
+                        f"{os.path.join('input_files', _name)}", 
+                        args.configs_dir, 
+                        args.test
+                    )
 
         else:
             print(f"Could not access '{args.configs_dir}' directory.")
@@ -968,7 +986,7 @@ def main() -> None:
             args.test,
         )
 
-        check_total_charge(args.output, args.test)
+        check_total_charge(args.output, args.configs_dir, args.test)
 
         # Change the file format to .xyz
         if args.test:
