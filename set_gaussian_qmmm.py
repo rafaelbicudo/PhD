@@ -8,6 +8,7 @@
 
 import argparse
 import sys
+import os
 
 
 # Functions
@@ -85,7 +86,7 @@ def read_gro_file(grofile: str) -> dict:
 
     # Get the itp ordering by tracking the change in residue number
     for i in range(len(data["resnum"])):
-        if i == 0 or data["resnum"][i] != data["resnum"][i-1]:
+        if (i == 0 or data["resnum"][i] != data["resnum"][i-1]):
             data["itpAtomNum"].append(1)
             j = 2
         else:
@@ -127,7 +128,7 @@ def read_itp_file(itpfile: str) -> dict:
                 words = line.split()
 
                 # Get the atom number
-                data["atomnum"].append(words[0])
+                data["atomnum"].append(int(words[0]))
 
                 # Get the atom type
                 data["atomtype"].append(words[1])
@@ -240,10 +241,6 @@ def get_QM_atoms(
     # Checking for each combination of input to create a list with QM atoms
     if atomnums and not residues:
         qm_atoms = atomnums
-        
-        # Flatten the qm_atoms in case of nested lists
-        if any(isinstance(i, list) for i in qm_atoms):
-            qm_atoms = [atom for sublist in qm_atoms for atom in sublist]
 
     elif not atomnums and residues:
         print(f"Selecting residue names {residues} with residue numbers {resnums}.\n")
@@ -266,7 +263,8 @@ def get_QM_atoms(
 def get_charge(
     itpfile: str,
     atom_name: str,
-    res_name: str
+    res_name: str,
+    itpAtomNum: int
 ) -> float:
     """Get the charge from the .itp file(s).
 
@@ -274,7 +272,8 @@ def get_charge(
         itpfile (str): .itp file name.
         atom_name (str): name of the atom.
         res_name (str): name of the residue.
-
+        itpAtomNum (int): corresponding atom number in the .itp file.
+        
     Returns:
         charge (float): charge of "atom_name".
     """
@@ -284,18 +283,20 @@ def get_charge(
 
     # Loop over all atom names
     for i in range(len(itp_data["atomname"])):
-        
-        # Check for matching atom names
-        if itp_data["atomname"][i] == atom_name:
+        # Check for matching itpAtomNumbers
+        if itp_data["atomnum"][i] == itpAtomNum:
 
-            # Check for matching residue names
-            if itp_data["resname"][i] == res_name:
+            # Check for matching atom names
+            if itp_data["atomname"][i] == atom_name:
 
-                charge = itp_data["atomcharge"][i]
-                # print(f"Charge of {charge} found in the {itpfile} topology file.")
+                # Check for matching residue names
+                if itp_data["resname"][i] == res_name:
 
-                return charge
-            
+                    charge = itp_data["atomcharge"][i]
+                    # print(f"Charge of {charge} found in the {itpfile} topology file.")
+
+                    return charge
+    
     # print(f"Couldn't find the atom in the {itpfile} topology file.")
     # sys.exit()
 
@@ -410,20 +411,19 @@ def get_closest_atoms(
     distances = list(distances)
     closest_atoms = list(closest_atoms)
 
-    if cutoff == 0:
+    if cutoff == 0.0:
         # Return the first "n_atoms" from this list
-        return closest_atoms[:n_atoms], distances[:n_atoms]
+        return closest_atoms[1:n_atoms+1], distances[1:n_atoms+1]
     else:
         # Return the atoms closer than the "cutoff" distance
         for i in range(len(distances)):
             if distances[i] > cutoff/10:
-                return closest_atoms[:i], distances[:i]
+                return closest_atoms[1:i], distances[1:i]
 
 
 def h_link_saturation(
     grofile: str,
     itpfile: str,
-    # resnames: list,
     qm_atoms: list,
     dist_scale_factor: float
 ) -> None:
@@ -432,7 +432,6 @@ def h_link_saturation(
     Args:
         grofile (str): .gro file with all atoms.
         itpfile (str): .itp topology file(s).
-        # resnames (list): list with all resnames.
         qm_atoms (list): list with atoms to be treated with QM.
         dist_scale_factor (float): scale factor to the link atom bond distance.
 
@@ -448,16 +447,13 @@ def h_link_saturation(
     to_remove_num = []
     link_coords = []
 
-    # Flatten the qm_atoms in case of nested lists
-    if any(isinstance(i, list) for i in qm_atoms):
-        qm_atoms = [atom for sublist in qm_atoms for atom in sublist]
-
     # Loop over QM atoms
     for i in qm_atoms:
 
         # Get the resname and the atom number (in the .itp file) of each QM atom
         itpAtomNum = gro_data["itpAtomNum"][gro_data["atomnum"].index(i)]
         resname = gro_data["resname"][gro_data["atomnum"].index(i)]
+        resnum = gro_data["resnum"][gro_data["atomnum"].index(i)]
 
         # Get the bonded atoms (.itp file's atom number) to the QM atom
         _, bonded_atoms = get_connectivity(itpfile, itpAtomNum, resname)
@@ -466,13 +462,16 @@ def h_link_saturation(
         closest_atoms, _ = get_closest_atoms(grofile, i, cutoff=0, n_atoms=20)
 
         for atom in closest_atoms:
-
             # Get the resname and the atom number (in the .itp file) of the neighbor
             _itpAtomNum = gro_data["itpAtomNum"][gro_data["atomnum"].index(atom)]
+            _resnum = gro_data["resnum"][gro_data["atomnum"].index(atom)]
 
             # Check if the neighbor is bonded to the QM atom and 
             # belongs to different residues to find the atoms to be removed
-            if _itpAtomNum in bonded_atoms and atom not in qm_atoms:
+            if (_itpAtomNum in bonded_atoms
+                and _resnum == resnum
+                and atom not in qm_atoms):
+                # Add the atom to the removal list
                 to_remove_num.append(atom)
 
                 # Get the atomic coordinates of both QM and classical atoms
@@ -518,40 +517,39 @@ def get_charge_shifts(
     """
 
     # Initialize the variables
-    qm_charge = 0
+    qm_charge = 0.0
     neigh_nums = []
     neigh_charge_shifts = []
 
     # Get the data dictionary
     gro_data = read_gro_file(grofile)
 
-    # Flatten the qm_atoms in case of nested lists
-    if any(isinstance(i, list) for i in qm_atoms):
-        qm_atoms = [atom for sublist in qm_atoms for atom in sublist]
-
     # Get the total charge of the QM atoms
     for j in qm_atoms:
         # Get the atom and residue name of each to be removed
         atomname = gro_data["atomname"][gro_data["atomnum"].index(j)]
         resname = gro_data["resname"][gro_data["atomnum"].index(j)]
+        itpAtomNum = gro_data["itpAtomNum"][gro_data["atomnum"].index(j)]
 
         # Loop over the .itp files
         for file in itpfile:
-            charge = get_charge(file, atomname, resname)
+            charge = get_charge(file, atomname, resname, itpAtomNum)
             if charge:
                 qm_charge += charge 
                 break
 
     # Loop over the atoms to be removed
     for i in to_remove:
-        # Get the atom and residue name of each to be removed
+        # Get the names and .itp number of each atom to be removed
         atomname = gro_data["atomname"][gro_data["atomnum"].index(i)]
         resname = gro_data["resname"][gro_data["atomnum"].index(i)]
+        itpAtomNum = gro_data["itpAtomNum"][gro_data["atomnum"].index(i)]
 
         # Gets the charge of the atom
         for file in itpfile:
             # Search for the charge
-            charge = get_charge(file, atomname, resname)
+            charge = get_charge(file, atomname, resname, itpAtomNum)
+
             # Breaks the loop if the charge is found
             if charge:
                 break
@@ -560,16 +558,26 @@ def get_charge_shifts(
         closest_atoms, distances = get_closest_atoms(grofile, i, cutoff, n_neighbors)
 
         # Get the the "n_neighbors" closest atoms
-        # [1:n_neighbors+1] to remove the distance with respect to itself
-        closest_atoms = closest_atoms[1:n_neighbors+1]
-        distances = distances[1:n_neighbors+1]
+        closest_atoms = closest_atoms[:n_neighbors]
+        distances = distances[:n_neighbors]
 
         # Add the closest atoms to the list with neighbors
         neigh_nums.extend(closest_atoms)
 
         # Equally redistribute the charge over the "n_neighbors" atoms
         for i in closest_atoms:
-            neigh_charge_shifts.append(-charge/len(closest_atoms))
+            neigh_charge_shifts.append(charge/len(closest_atoms))
+
+    # Combine charge shifts for repeated atoms
+    summed_charges = {}
+    for i, j in zip(neigh_nums, neigh_charge_shifts):
+        if i in summed_charges:
+            summed_charges[i] += j
+        else:
+            summed_charges[i] = j
+
+    neigh_nums = list(summed_charges.keys())
+    neigh_charge_shifts = list(summed_charges.values())
 
     # Compute the overall charge shift
     qm_charge_shift = qm_charge/(gro_data["n_atoms"]-len(to_remove)-len(qm_atoms))
@@ -612,16 +620,27 @@ def write_gaussian_input(
     gro_data = read_gro_file(grofile)
 
     # Get the charge shifts
-    qm_shift, neigh_nums, neigh_shifts = get_charge_shifts(grofile, itpfile, qm_atoms, to_remove, n_neighbors, cutoff)
+    qm_shift, neigh_nums, neigh_shifts = get_charge_shifts(
+        grofile, 
+        itpfile, 
+        qm_atoms, 
+        to_remove, 
+        n_neighbors, 
+        cutoff
+    )
 
     # Write the coordinates in the Gaussian input file
     with open(f"{output}", "w") as fout:
+        if test:
+            # Write the amount of atoms for the .xyz file
+            fout.write(f"{len(gro_data['atomnum'])}\n\n")
 
-        # Write the header
-        fout.write(f"chk={output.split('.')[0]}.chk \n")
-        fout.write(f"#p {' '.join(keywords)} \n\n")
-        fout.write(f"QM calculation with point charges \n\n")
-        fout.write(f"{charge} {spin_mult}\n")
+        else:
+            # Write the header
+            fout.write(f"chk={output.split('.')[0]}.chk \n")
+            fout.write(f"#p {' '.join(keywords)} \n\n")
+            fout.write(f"QM calculation with point charges \n\n")
+            fout.write(f"{charge} {spin_mult}\n")
 
         # Write the QM atoms
         for j in range(len(gro_data["resname"])):
@@ -654,138 +673,306 @@ def write_gaussian_input(
                 and gro_data["atomnum"][j] not in to_remove):
 
                 # Get the charge
-                charge = get_charge(itpfile, gro_data["atomname"][j], gro_data["resname"][j])
+                _charge = get_charge(itpfile, gro_data["atomname"][j], gro_data["resname"][j], gro_data["itpAtomNum"][j])
 
                 # Redistribute the charges to neutralize the system
                 if gro_data["atomnum"][j] in neigh_nums:
-                    charge += qm_shift + neigh_shifts[neigh_nums.index(gro_data["atomnum"][j])]
+                    _charge += qm_shift + neigh_shifts[neigh_nums.index(gro_data["atomnum"][j])]
                 else:
-                    charge += qm_shift
+                    _charge += qm_shift
 
                 # Boolean variable to check if partial charges are correctly placed
                 if test:
                     # Write the partial charges as bismuth atoms
-                    fout.write("Bi\t{:>.3f}\t{:>.3f}\t{:>.4f}\n".format(
+                    fout.write("Bi\t{:>.3f}\t{:>.3f}\t{:>3f}\n".format(
                                 gro_data["x_coord"][j]*10, 
                                 gro_data["y_coord"][j]*10,
                                 gro_data["z_coord"][j]*10))
+
                 else:
                     # Write the coordinates and partial charge
-                    fout.write("{:>.3f}\t{:>.3f}\t{:>.3f}\t{:>.4f}\n".format(
+                    fout.write("{:>.3f}\t{:>.3f}\t{:>.3f}\t{:>}\n".format(
                                 gro_data["x_coord"][j]*10, 
                                 gro_data["y_coord"][j]*10,
                                 gro_data["z_coord"][j]*10, 
-                                charge))
+                                _charge))
 
         # Write the final blank line required by Gaussian
         fout.write("\n")
 
+    # Yield final messages
+    print(f"Gaussian input file '{output}' successfully created.\n")
+    if cutoff != 0.0:
+        print(f"Atoms {to_remove} were removed and the charges were redistributed over the point charges within a {cutoff} AA radius sphere.\n")
+    else:
+        print(f"Atoms {to_remove} were removed and the charges were redistributed over the respective {n_neighbors} closest point charges.\n")
+
+
+def get_distant_charge(file: str) -> float | str:
+    """Get the most distant point charge from the QM region.
+
+    Args:
+        file (str): name of the Gaussian file.
+    Returns:
+        larg_dist (float): distance of the most distant charge.
+        larg_line (str): line of the most distant charge.
+    """
+
+    # Initialize the variables
+    qm_atoms = []
+    larg_dist = 0
+    larg_line = ''
+
+    with open(file, "r") as f:
+        line = f.readline()
+
+        # Read lines until the second blank line is found
+        i = 0
+        while i < 3:
+            line = f.readline()
+            if line.strip() == "":
+                i += 2
+
+        # Skip the line with charge and multiplicity
+        line = f.readline()
+        line = f.readline()
+
+        # Get the QM atoms coordinates       
+        while line.strip() != "":
+            words = line.split()
+
+            qm_atoms.append(
+                (float(words[1]),
+                 float(words[2]),
+                 float(words[3]))
+                )
+            
+            line = f.readline()
+
+        # Skip the next blank line
+        line = f.readline()
+
+        # Loop over all point charges
+        while line.strip() != "":
+            words = line.split()
+            
+            x = float(words[0])
+            y = float(words[1])
+            z = float(words[2])
+
+            # Get the smallest distance to the QM atoms
+            dist = 1_000_000
+            for atom in qm_atoms:
+                # Get the coordinates
+                x_ = atom[0]
+                y_ = atom[1]
+                z_ = atom[2]
+                
+                # Compute the distance
+                dist_ = ((x-x_)**2+(y-y_)**2+(z-z_)**2)**(1/2)
+                if dist_ < dist:
+                    dist = dist_
+            
+            if dist > larg_dist:
+                larg_dist = dist
+                larg_line = line
+
+            line = f.readline()
+
+    return larg_dist, larg_line
+
 
 def check_total_charge(file: str, test: bool) -> None:
-    """Add the spurious charge to the last partial charge.  
+    """Add the spurious charge to the most distant point charge.  
 
     Args:
         file (str): name of the Gaussian file.
         test (bool): avoid searching for charges during visualization tests.
     Returns:
-        A "fixed_{file}" file.
+        A "neutral_{file}" file.
     """
 
     with open(file, "r") as f:
         line = f.readline()
 
-        # Read lines until the third blank line is found
         if test:
-            print("No partial charges when --test is set.")
+            print("No partial charges when --test is set.\n")
         else:
+            # Read lines until the third blank line is found
             i = 0
             while i < 3:
                 line = f.readline()
                 if line.strip() == "":
                     i += 1
 
-        # Loop over the partial charges
+        # Initialize the total charge
+        total_charge = 0.0
+
+        # Loop over the point charges
         while line:
             line = f.readline()
             
             # Get the total charge
-            total_charge = 0
             if len(line.split()) == 4:
                 total_charge += float(line.split()[3])
-    
+
     # Neutralize the total charge if it isn't zero
     if not test:
-        if round(total_charge, 3) == 0:
-            print(f"Total charge is {total_charge:>.3f}. No need for fixing numerical fluctuations.")
+        if round(total_charge, 5) == 0:
+            print(f"Total charge is 0.00000. No need for fixing numerical fluctuations.")
         else:
+            # Print a warning for big charges
+            if total_charge > 0.1:
+                print("WARNING: Total charge is bigger than usual numerical fluctuations." \
+                      "Make sure that the charge is consistent with the expected total charge.")
+
+            # Find the most distant charge (in average) to the molecule
+            larg_dist, larg_line = get_distant_charge(file)
+
+            # Write the neutralized file
             with open(file, "r") as f:
                 lines = f.readlines()
-                last_line = lines[-2].split()
-                last_line[-1] = str(float(last_line[-1]) - float(total_charge))
-                lines[-2] = '\t'.join(last_line) + "\n"
 
-            with open(f"fixed_{file}", "w") as fout:
+                # Update the charge
+                for i in range(len(lines)):
+                    if lines[i] == larg_line:
+                        words = lines[i].split()
+                        words[-1] = str(float(words[-1]) - float(total_charge))
+                        lines[i] = '\t'.join(words) + "\n"
+
+            with open(f"neutral_{file}", "w") as fout:
                 for line in lines:
                     fout.write(line)
 
-            print(f"Total charge is {total_charge:>.3f}. Charge {-total_charge:>.3f} was added to the last partial charge.")
+            print(f"Total charge is {total_charge:.5f} due to numerical fluctuations.\n"
+                  f"Charge {-total_charge:.5f} was added to the most " \
+                  f"distant partial charge in file neutral_{file}.\n" \
+                  f"The most distant partial charge is located at {tuple(larg_line.split()[:3])} AA " \
+                  f"and the smallest distance of it to any QM atom is {larg_dist:.3f} AA.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract configurations from Gromos87 (.gro) files.")
     
-    parser.add_argument("grofile", help="reference .gro configuration file.", type=str)
     parser.add_argument("itpfile", help="topology file(s) (.itp) from GROMACS.", nargs="+", type=str, default=[])
+    parser.add_argument("--grofile", "-gro", help="reference .gro configuration file.", type=str)
+    parser.add_argument("--configs_dir", "-dir", help="path to the directory with .gro configurations.", type=str)
     parser.add_argument("--atomnums", "-an", help="list of atom numbers treated with QM (e.g. 1-10 22 82-93).", nargs="+", type=parse_range, default=[])
     parser.add_argument("--residues", "-res", help="list of residues treated with QM.", nargs="+", type=str, default=[])
     parser.add_argument("--resnums", "-rn", help="number of the residue(s) to be treated with QM.", nargs="+", type=int, default=[1])
     parser.add_argument("--link_scale_factor", "-sf", help="link atom distance scale factor.", type=float, default=0.71)
     parser.add_argument("--n_neighbors", "-nn", help="number of closest neighbors to redistribute the charge.", type=int, default=3)
-    parser.add_argument("--cutoff", "-cut", help="cutoff radius (in AA) to redistribute the charge.", type=float, default=5.0)
+    parser.add_argument("--cutoff", "-cut", help="cutoff radius (in AA) to redistribute the charge.", type=float, default=0.0)
     parser.add_argument("--fix_resnum", "-fr", help="fix the residue numbering (for polymatic example).", action="store_true")
-    # parser.add_argument("--configs_dir", "-dir", help="path to the directory with .gro configurations.", type=str, default=".")
     parser.add_argument("--keywords", "-k", help="Gaussian keywords for the calculation.", nargs="+", type=str, default=["B3LYP/6-31G(d,p) Charge"])
     parser.add_argument("--charge", "-c", help="total charge of the system.", type=int, default=0)
     parser.add_argument("--spin_multiplicity", "-ms", help="spin multiplicity of the system.", type=int, default=1)
     parser.add_argument("--output", "-o", help="name of the output file", type=str, default="calc.com")
-    parser.add_argument("--test", help="If True, set partial charges as bismuth atoms for visualization.", action="store_true", default=False)
+    parser.add_argument("--test", help="If True, generates a .xyz file with partial charges as bismuth atoms for visualization.", action="store_true", default=False)
 
     args = parser.parse_args()
 
-    # Hardcoded section to set residue numbers for the PQx8O-T polymatic example
-    if args.fix_resnum:
-        fix_resnum(args.grofile, args.itpfile)
-        qm_atoms = get_QM_atoms(f"updated_{args.grofile}", args.atomnums, args.residues, args.resnums)
+    if args.grofile and args.configs_dir:
+        print("Choose between a single '-gro' file or the directory 'configs_dir' with more than one file.")
+        sys.exit()
+    elif not args.grofile and not args.configs_dir:
+        print("Provide a '-gro' file or a 'configs_dir' directory with files.")
+        sys.exit()
+
+    if args.configs_dir:
+        if os.path.isdir(args.configs_dir):
+            # Creates a directory for the input files
+            os.makedirs("input_files", exist_ok=True)
+
+            # Loop over all files in the configuration's directory
+            for _, _, files in os.walk(args.configs_dir):
+                for file in files:
+                    # Hardcoded section to set residue numbers for the PQx8O-T polymatic example
+                    if args.fix_resnum:
+                        fix_resnum(file, args.itpfile)
+                        qm_atoms = get_QM_atoms(f"updated_{file}", args.atomnums, args.residues, args.resnums)
+
+                    else:
+                        # Get the .gro atom numbers of QM atoms
+                        qm_atoms = get_QM_atoms(file, args.atomnums, args.residues, args.resnums)
+
+                    # Flatten the qm_atoms in case of nested lists
+                    if any(isinstance(i, list) for i in qm_atoms):
+                        qm_atoms = [atom for sublist in qm_atoms for atom in sublist]
+
+                    # Get the .gro atom numbers of atoms to be removed and the link atoms coordinates
+                    to_remove_num, link_coords = h_link_saturation(
+                        file, 
+                        args.itpfile, 
+                        qm_atoms,
+                        args.link_scale_factor
+                    )
+
+                    # Set a variable for the input file's name
+                    _name = f"input_{file.split('.')[0]}.com"
+
+                    write_gaussian_input(
+                        file, 
+                        args.itpfile,
+                        qm_atoms,
+                        to_remove_num,
+                        link_coords,
+                        args.n_neighbors,
+                        args.cutoff,
+                        args.keywords, 
+                        args.charge, 
+                        args.spin_multiplicity, 
+                        f"{os.path.join('input_files', _name)}",
+                        args.test,
+                    )
+
+                    check_total_charge(file, args.test)
+
+        else:
+            print(f"Could not access '{args.configs_dir}' directory.")
 
     else:
-        # Get the .gro atom numbers of QM atoms
-        qm_atoms = get_QM_atoms(args.grofile, args.atomnums, args.residues, args.resnums)
+        # Hardcoded section to set residue numbers for the PQx8O-T polymatic example
+        if args.fix_resnum:
+            fix_resnum(args.grofile, args.itpfile)
+            qm_atoms = get_QM_atoms(f"updated_{args.grofile}", args.atomnums, args.residues, args.resnums)
 
-    # Get the .gro atom numbers of atoms to be removed and the link atoms coordinates
-    to_remove_num, link_coords = h_link_saturation(
-        args.grofile, 
-        args.itpfile, 
-        # args.residues, 
-        qm_atoms,
-        args.link_scale_factor
-    )
+        else:
+            # Get the .gro atom numbers of QM atoms
+            qm_atoms = get_QM_atoms(args.grofile, args.atomnums, args.residues, args.resnums)
 
-    write_gaussian_input(
-        args.grofile, 
-        args.itpfile,
-        qm_atoms,
-        to_remove_num,
-        link_coords,
-        args.n_neighbors,
-        args.cutoff,
-        args.keywords, 
-        args.charge, 
-        args.spin_multiplicity, 
-        args.output,
-        args.test,
-    )
+        # Flatten the qm_atoms in case of nested lists
+        if any(isinstance(i, list) for i in qm_atoms):
+            qm_atoms = [atom for sublist in qm_atoms for atom in sublist]
 
-    check_total_charge(args.output, args.test)
+        # Get the .gro atom numbers of atoms to be removed and the link atoms coordinates
+        to_remove_num, link_coords = h_link_saturation(
+            args.grofile, 
+            args.itpfile, 
+            qm_atoms,
+            args.link_scale_factor
+        )
+
+        write_gaussian_input(
+            args.grofile, 
+            args.itpfile,
+            qm_atoms,
+            to_remove_num,
+            link_coords,
+            args.n_neighbors,
+            args.cutoff,
+            args.keywords, 
+            args.charge, 
+            args.spin_multiplicity, 
+            args.output,
+            args.test,
+        )
+
+        check_total_charge(args.output, args.test)
+
+        # Change the file format to .xyz
+        if args.test:
+            os.rename(args.output, f"{args.output[:-4]}.xyz")
 
 
 if __name__ == '__main__':
