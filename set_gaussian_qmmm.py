@@ -3,6 +3,8 @@
 """Create Gaussian09/16 input files to run calculations according to the s-QM/MM method.
 
     [ ] Add an option to loop over a directory with several files.
+    [ ] Fix the wrong naming at the .chk file when looping over several files.
+    [ ] Fix the error when trying to run '-dir' in the cluster.
 """
 
 
@@ -782,7 +784,11 @@ def get_distant_charge(file: str) -> float | str:
     return larg_dist, larg_line
 
 
-def check_total_charge(file: str, configs_dir: str, test: bool) -> None:
+def check_total_charge(
+    file: str, 
+    configs_dir: str, 
+    test: bool
+) -> None:
     """Add the spurious charge to the most distant point charge.  
 
     Args:
